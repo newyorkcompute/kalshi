@@ -6,9 +6,10 @@
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
+  "module": "src/index.ts",
   "types": "./dist/index.d.ts",
   "bin": {
-    "kalshi-mcp": "./dist/index.js"
+    "kalshi-mcp": "./dist/cli.js"
   },
   "files": [
     "dist"
@@ -41,7 +42,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "start": "node dist/index.js",
+    "start": "node dist/cli.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
@@ -54,6 +55,7 @@
     "zod": "^3.24.4"
   },
   "devDependencies": {
+    "@smithery/cli": "^1.4.6",
     "@types/node": "^22.15.29",
     "dotenv": "^16.5.0",
     "eslint": "^9.28.0",

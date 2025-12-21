@@ -1,9 +1,18 @@
-# Smithery configuration file: https://smithery.ai/docs/config#smitheryyaml
+# Smithery configuration for Kalshi MCP Server
+# https://smithery.ai/docs/build/deployments/typescript
 
+# TypeScript Local Server (Beta) - recommended for TypeScript projects
+runtime: "typescript"
+target: "local"
+
+# Fallback: stdio command configuration for older Smithery versions
 startCommand:
   type: stdio
   configSchema:
     type: object
+    required:
+      - KALSHI_API_KEY
+      - KALSHI_PRIVATE_KEY
     properties:
       KALSHI_API_KEY:
         type: string
@@ -11,13 +20,9 @@ startCommand:
       KALSHI_PRIVATE_KEY:
         type: string
         description: RSA private key in PEM format for API authentication
-    required:
-      - KALSHI_API_KEY
-      - KALSHI_PRIVATE_KEY
   commandFunction:
     |-
-    (config) => ({ command: 'node', args: ['dist/index.js'], env: { KALSHI_API_KEY: config.KALSHI_API_KEY, KALSHI_PRIVATE_KEY: config.KALSHI_PRIVATE_KEY } })
+    (config) => ({ command: 'node', args: ['dist/cli.js'], env: { KALSHI_API_KEY: config.KALSHI_API_KEY, KALSHI_PRIVATE_KEY: config.KALSHI_PRIVATE_KEY } })
   exampleConfig:
     KALSHI_API_KEY: "your-api-key-id"
-    KALSHI_PRIVATE_KEY: "-----BEGIN RSA PRIVATE KEY-----\\n...\\n-----END RSA PRIVATE KEY-----"
-
+    KALSHI_PRIVATE_KEY: "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
