@@ -1,0 +1,33 @@
+{
+  "name": "@newyorkcompute/kalshi",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Command-native tools for Kalshi prediction markets — MCP server, CLI, and more.",
+  "author": "NewYorkCompute",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/newyorkcompute/kalshi"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "nx run-many -t build",
+    "typecheck": "nx run-many -t typecheck",
+    "lint": "nx run-many -t lint",
+    "test": "nx run-many -t test",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "npm run build && changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/changelog-github": "^0.5.2",
+    "@changesets/cli": "^2.29.8",
+    "nx": "^21.0.3",
+    "typescript": "^5.7.2"
+  }
+}
