@@ -51,7 +51,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
     "kalshi-typescript": "^3.3.0",
-    "zod": "^3.24.4"
+    "zod": "^4.2.1"
   },
   "devDependencies": {
     "@types/node": "^22.15.29",
