@@ -25,7 +25,15 @@
     "prediction-markets",
     "trading",
     "ai",
-    "claude"
+    "claude",
+    "llm",
+    "anthropic",
+    "cursor",
+    "betting",
+    "markets",
+    "forecasting",
+    "api",
+    "sdk"
   ],
   "engines": {
     "node": ">=18.0.0"

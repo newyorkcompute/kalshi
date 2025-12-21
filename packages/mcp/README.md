@@ -1,5 +1,10 @@
 # @newyorkcompute/kalshi-mcp
 
+[![npm version](https://img.shields.io/npm/v/@newyorkcompute/kalshi-mcp)](https://www.npmjs.com/package/@newyorkcompute/kalshi-mcp)
+[![license](https://img.shields.io/npm/l/@newyorkcompute/kalshi-mcp)](https://github.com/newyorkcompute/kalshi/blob/main/LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/newyorkcompute/kalshi/ci.yml?branch=main&label=CI)](https://github.com/newyorkcompute/kalshi/actions/workflows/ci.yml)
+[![node](https://img.shields.io/node/v/@newyorkcompute/kalshi-mcp)](https://www.npmjs.com/package/@newyorkcompute/kalshi-mcp)
+
 MCP (Model Context Protocol) server for Kalshi prediction markets — enables AI agents to interact with Kalshi.
 
 ## Installation
@@ -206,6 +211,13 @@ Cancel an existing order.
 3. Generate a new API key (you'll create an RSA key pair)
 4. Save your API Key ID and private key securely
 
+## Links
+
+- [GitHub](https://github.com/newyorkcompute/kalshi)
+- [npm](https://www.npmjs.com/package/@newyorkcompute/kalshi-mcp)
+- [Kalshi API Docs](https://docs.kalshi.com)
+- [MCP Protocol](https://modelcontextprotocol.io)
+
 ## License
 
-MIT © NewYorkCompute
+MIT © [NewYorkCompute](https://github.com/newyorkcompute)
