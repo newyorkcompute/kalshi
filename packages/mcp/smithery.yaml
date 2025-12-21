@@ -1,27 +1,11 @@
-# Smithery configuration file: https://smithery.ai/docs/config#smitheryyaml
-
-# Server metadata
-name: Kalshi MCP Server
-description: MCP server for Kalshi prediction markets — enables AI agents to query markets, check balances, view positions, and place trades via the official Kalshi API.
-version: 0.3.0
-author: NewYorkCompute
-license: MIT
-homepage: https://github.com/newyorkcompute/kalshi
-repository: https://github.com/newyorkcompute/kalshi.git
-keywords:
-  - kalshi
-  - prediction-markets
-  - trading
-  - mcp
-  - ai
-  - claude
-  - forecasting
-  - betting
+# Smithery configuration file
+# Based on hugeicons/mcp-server pattern for stdio servers
 
 startCommand:
   type: stdio
   configSchema:
     type: object
+    description: Kalshi API credentials for authentication
     properties:
       KALSHI_API_KEY:
         type: string
