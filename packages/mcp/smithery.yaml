@@ -3,7 +3,6 @@
 startCommand:
   type: stdio
   configSchema:
-    # JSON Schema defining the configuration options for the MCP.
     type: object
     properties:
       KALSHI_API_KEY:
@@ -16,9 +15,9 @@ startCommand:
       - KALSHI_API_KEY
       - KALSHI_PRIVATE_KEY
   commandFunction:
-    # A JS function that produces the CLI command based on the given config to start the MCP on stdio.
     |-
-    (config) => ({ command: 'npx', args: ['-y', '@newyorkcompute/kalshi-mcp'], env: { KALSHI_API_KEY: config.KALSHI_API_KEY, KALSHI_PRIVATE_KEY: config.KALSHI_PRIVATE_KEY } })
+    (config) => ({ command: 'node', args: ['dist/index.js'], env: { KALSHI_API_KEY: config.KALSHI_API_KEY, KALSHI_PRIVATE_KEY: config.KALSHI_PRIVATE_KEY } })
   exampleConfig:
     KALSHI_API_KEY: "your-api-key-id"
-    KALSHI_PRIVATE_KEY: "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
+    KALSHI_PRIVATE_KEY: "-----BEGIN RSA PRIVATE KEY-----\\n...\\n-----END RSA PRIVATE KEY-----"
+
