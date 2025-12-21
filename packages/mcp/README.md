@@ -62,7 +62,9 @@ Add to your MCP configuration:
 
 ## Tools
 
-### `get_markets`
+### Market Tools
+
+#### `get_markets`
 
 List and search Kalshi prediction markets.
 
@@ -74,14 +76,14 @@ List and search Kalshi prediction markets.
 - `status` (optional): Filter by status (`open`, `closed`, `settled`)
 - `tickers` (optional): Comma-separated list of specific tickers
 
-### `get_market`
+#### `get_market`
 
 Get detailed information about a specific market.
 
 **Parameters:**
 - `ticker` (required): Market ticker (e.g., `KXBTC-25JAN03-B100500`)
 
-### `get_orderbook`
+#### `get_orderbook`
 
 Get the orderbook for a market.
 
@@ -89,13 +91,107 @@ Get the orderbook for a market.
 - `ticker` (required): Market ticker
 - `depth` (optional): Number of price levels (1-100)
 
+#### `get_trades`
+
+Get recent trades on markets.
+
+**Parameters:**
+- `ticker` (optional): Filter by market ticker
+- `limit` (optional): Number of trades to return (1-1000)
+- `cursor` (optional): Pagination cursor
+- `min_ts` (optional): Filter trades after this Unix timestamp
+- `max_ts` (optional): Filter trades before this Unix timestamp
+
+### Event Tools
+
+#### `get_events`
+
+List Kalshi events. Events contain one or more markets.
+
+**Parameters:**
+- `limit` (optional): Number of events to return (1-200)
+- `cursor` (optional): Pagination cursor
+- `status` (optional): Filter by status (`open`, `closed`, `settled`)
+- `series_ticker` (optional): Filter by series ticker
+- `with_nested_markets` (optional): Include markets in response
+
+#### `get_event`
+
+Get detailed information about a specific event.
+
+**Parameters:**
+- `event_ticker` (required): Event ticker (e.g., `KXBTC`)
+- `with_nested_markets` (optional): Include markets in response
+
+### Portfolio Tools
+
+#### `get_balance`
+
+Get your account balance and portfolio value.
+
+**Parameters:** None
+
+**Returns:** Balance in dollars and cents, portfolio value.
+
+#### `get_positions`
+
+Get your current positions on markets.
+
+**Parameters:**
+- `limit` (optional): Number of positions to return (1-100)
+- `cursor` (optional): Pagination cursor
+- `ticker` (optional): Filter by market ticker
+- `event_ticker` (optional): Filter by event ticker
+- `count_filter` (optional): Filter by `position` or `total_traded`
+
+### Order Tools
+
+#### `get_orders`
+
+Get your orders on Kalshi.
+
+**Parameters:**
+- `ticker` (optional): Filter by market ticker
+- `event_ticker` (optional): Filter by event ticker
+- `status` (optional): Filter by status (`resting`, `canceled`, `executed`)
+- `limit` (optional): Number of orders to return (1-200)
+- `cursor` (optional): Pagination cursor
+- `min_ts` (optional): Filter after Unix timestamp
+- `max_ts` (optional): Filter before Unix timestamp
+
+#### `create_order`
+
+Place a new order on a market. **⚠️ This executes real trades!**
+
+**Parameters:**
+- `ticker` (required): Market ticker
+- `side` (required): `yes` or `no`
+- `action` (required): `buy` or `sell`
+- `count` (required): Number of contracts
+- `type` (optional): `limit` or `market` (default: limit)
+- `yes_price` (optional): Price in cents (1-99) for yes orders
+- `no_price` (optional): Price in cents (1-99) for no orders
+- `client_order_id` (optional): Your order ID for idempotency
+- `expiration_ts` (optional): Unix timestamp when order expires
+
+#### `cancel_order`
+
+Cancel an existing order.
+
+**Parameters:**
+- `order_id` (required): The order ID to cancel
+
 ## Example Conversations
 
 > "What prediction markets are available for Bitcoin on Kalshi?"
 
 > "Show me the orderbook for the KXBTC-25JAN03-B100500 market"
 
-> "What's the current price and volume for Fed rate decision markets?"
+> "What's my current balance and positions?"
+
+> "Buy 10 contracts of YES at 45 cents on KXBTC-25JAN03-B100500"
+
+> "What are my open orders? Cancel order xyz-123"
 
 ## Requirements
 
@@ -113,4 +209,3 @@ Get the orderbook for a market.
 ## License
 
 MIT © NewYorkCompute
-

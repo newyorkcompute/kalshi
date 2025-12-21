@@ -1,4 +1,10 @@
-import { Configuration, MarketApi } from "kalshi-typescript";
+import {
+  Configuration,
+  MarketApi,
+  PortfolioApi,
+  OrdersApi,
+  EventsApi,
+} from "kalshi-typescript";
 
 /**
  * Kalshi API configuration from environment variables
@@ -49,3 +55,26 @@ export function createMarketApi(config: KalshiConfig): MarketApi {
   return new MarketApi(sdkConfig);
 }
 
+/**
+ * Create a PortfolioApi instance with the given configuration
+ */
+export function createPortfolioApi(config: KalshiConfig): PortfolioApi {
+  const sdkConfig = createSdkConfig(config);
+  return new PortfolioApi(sdkConfig);
+}
+
+/**
+ * Create an OrdersApi instance with the given configuration
+ */
+export function createOrdersApi(config: KalshiConfig): OrdersApi {
+  const sdkConfig = createSdkConfig(config);
+  return new OrdersApi(sdkConfig);
+}
+
+/**
+ * Create an EventsApi instance with the given configuration
+ */
+export function createEventsApi(config: KalshiConfig): EventsApi {
+  const sdkConfig = createSdkConfig(config);
+  return new EventsApi(sdkConfig);
+}
