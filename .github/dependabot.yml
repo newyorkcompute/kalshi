@@ -7,6 +7,10 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 10
+    # Only allow minor and patch updates, ignore major
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       # Group minor and patch updates together
       npm-minor-patch:
@@ -26,9 +30,12 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    # Only allow minor and patch updates for actions too
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     labels:
       - "dependencies"
       - "github-actions"
     commit-message:
       prefix: "chore(deps)"
-
