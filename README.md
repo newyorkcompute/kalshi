@@ -1,21 +1,29 @@
 # @newyorkcompute/kalshi
 
+[![CI](https://img.shields.io/github/actions/workflow/status/newyorkcompute/kalshi/ci.yml?branch=main&label=CI)](https://github.com/newyorkcompute/kalshi/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![NX](https://img.shields.io/badge/maintained%20with-NX-143055?logo=nx)](https://nx.dev)
+
 > Command-native tools for Kalshi prediction markets — MCP server, CLI, and more.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+## Features
+
+- 🤖 **11 MCP Tools** — Markets, events, portfolio, and order management
+- 📈 **Real Trading** — Place and cancel orders via AI agents
+- 🔐 **Secure Auth** — RSA-PSS authentication with the official SDK
+- ⚡ **TypeScript** — Fully typed, modern ESM package
+- 📦 **NX Monorepo** — Scalable, cacheable builds
 
 ## Packages
 
 | Package | Description | Status |
 |---------|-------------|--------|
-| [`@newyorkcompute/kalshi-mcp`](./packages/mcp) | MCP server for AI agents | ✅ Available |
+| [`@newyorkcompute/kalshi-mcp`](./packages/mcp) | MCP server for AI agents | [![npm](https://img.shields.io/npm/v/@newyorkcompute/kalshi-mcp)](https://www.npmjs.com/package/@newyorkcompute/kalshi-mcp) |
 | `@newyorkcompute/kalshi-cli` | Command-line interface | 🚧 Coming soon |
 
 ## Quick Start
 
 ### MCP Server
-
-Install and use with Claude Desktop or any MCP-compatible client:
 
 ```bash
 npx @newyorkcompute/kalshi-mcp
@@ -29,7 +37,7 @@ npm install -g @newyorkcompute/kalshi-mcp
 
 ### Claude Desktop Configuration
 
-Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
@@ -46,14 +54,51 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 }
 ```
 
+## MCP Tools
+
+### Market Tools
+| Tool | Description |
+|------|-------------|
+| `get_markets` | List and search markets with filters |
+| `get_market` | Get detailed info for a specific market |
+| `get_orderbook` | Get orderbook (bids/asks) for a market |
+| `get_trades` | Get recent trades on markets |
+
+### Event Tools
+| Tool | Description |
+|------|-------------|
+| `get_events` | List events with filters |
+| `get_event` | Get detailed event information |
+
+### Portfolio Tools
+| Tool | Description |
+|------|-------------|
+| `get_balance` | Get account balance and portfolio value |
+| `get_positions` | Get current positions on markets |
+
+### Order Tools
+| Tool | Description |
+|------|-------------|
+| `get_orders` | List your orders with filters |
+| `create_order` | Place buy/sell orders ⚠️ |
+| `cancel_order` | Cancel resting orders |
+
+### Example Prompts
+
+> "Show me the current Bitcoin prediction markets on Kalshi"
+
+> "What's my balance and current positions?"
+
+> "Buy 10 YES contracts at 45 cents on KXBTC-25JAN03-B100500"
+
+> "Cancel my open order xyz-123"
+
 ## Authentication
 
-The Kalshi API requires RSA-PSS authentication. You'll need:
+The Kalshi API requires RSA-PSS authentication:
 
-1. **API Key ID** — Get this from your [Kalshi account settings](https://kalshi.com/account/api)
-2. **Private Key** — The RSA private key (PEM format) you generated when creating your API key
-
-Set these as environment variables:
+1. **API Key ID** — Get from [Kalshi account settings](https://kalshi.com/account/api)
+2. **Private Key** — RSA private key (PEM format) from API key generation
 
 ```bash
 export KALSHI_API_KEY="your-api-key-id"
@@ -62,27 +107,9 @@ export KALSHI_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----
 -----END RSA PRIVATE KEY-----"
 ```
 
-## MCP Tools
-
-The MCP server exposes these tools:
-
-| Tool | Description |
-|------|-------------|
-| `get_markets` | List and search markets with filters |
-| `get_market` | Get detailed info for a specific market |
-| `get_orderbook` | Get orderbook (bids/asks) for a market |
-
-### Example Usage
-
-Once connected to Claude Desktop, you can ask:
-
-- "Show me the current Bitcoin prediction markets on Kalshi"
-- "What's the orderbook for KXBTC-25JAN03-B100500?"
-- "Get details on the market for Fed rate decisions"
-
 ## Development
 
-This is an NX monorepo. To get started:
+This is an [NX](https://nx.dev) monorepo with TypeScript packages.
 
 ```bash
 # Install dependencies
@@ -91,22 +118,51 @@ npm install
 # Build all packages
 npm run build
 
+# Run tests
+npm run test
+
+# Type check
+npm run typecheck
+
+# Lint
+npm run lint
+
 # Build specific package
 npx nx build @newyorkcompute/kalshi-mcp
+```
+
+### Project Structure
+
+```
+kalshi/
+├── packages/
+│   └── mcp/                 # @newyorkcompute/kalshi-mcp
+│       ├── src/
+│       │   ├── index.ts     # MCP server entry
+│       │   ├── config.ts    # SDK configuration
+│       │   └── tools/       # Tool implementations
+│       └── package.json
+├── nx.json                  # NX configuration
+├── package.json             # Root workspace
+└── tsconfig.base.json       # Shared TypeScript config
 ```
 
 ## Requirements
 
 - Node.js 18+
-- Kalshi account with API access (US residency required)
+- Kalshi account with API access
+
+## Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
 
 ## License
 
-MIT © NewYorkCompute
+MIT © [NewYorkCompute](https://github.com/newyorkcompute)
 
 ## Links
 
 - [Kalshi API Documentation](https://docs.kalshi.com)
-- [MCP Specification](https://modelcontextprotocol.io)
+- [MCP Protocol](https://modelcontextprotocol.io)
 - [Kalshi TypeScript SDK](https://www.npmjs.com/package/kalshi-typescript)
-
+- [NX](https://nx.dev)
