@@ -1,0 +1,27 @@
+# Smithery configuration for @newyorkcompute/kalshi-mcp
+# https://smithery.ai/docs/config
+
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      KALSHI_API_KEY:
+        type: string
+        description: Your Kalshi API key ID
+      KALSHI_PRIVATE_KEY:
+        type: string
+        description: RSA private key in PEM format for API authentication
+    required:
+      - KALSHI_API_KEY
+      - KALSHI_PRIVATE_KEY
+  commandFunction: |-
+    (config) => ({
+      command: 'npx',
+      args: ['-y', '@newyorkcompute/kalshi-mcp'],
+      env: {
+        KALSHI_API_KEY: config.KALSHI_API_KEY,
+        KALSHI_PRIVATE_KEY: config.KALSHI_PRIVATE_KEY
+      }
+    })
+
