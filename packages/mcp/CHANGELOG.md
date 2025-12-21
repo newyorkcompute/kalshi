@@ -1,5 +1,31 @@
 # @newyorkcompute/kalshi-mcp
 
+## 0.3.0
+
+### Minor Changes
+
+- [#3](https://github.com/newyorkcompute/kalshi/pull/3) [`d260c98`](https://github.com/newyorkcompute/kalshi/commit/d260c9802270bac3458e2e8d1b0774c86787c02a) Thanks [@siddharthkul](https://github.com/siddharthkul)! - Add P1 tools for portfolio management, events, trades, and order operations
+
+  **Portfolio tools:**
+
+  - `get_balance` - Get account balance and portfolio value
+  - `get_positions` - Get current positions on markets
+
+  **Event tools:**
+
+  - `get_events` - List events with filters
+  - `get_event` - Get detailed event information
+
+  **Trade tools:**
+
+  - `get_trades` - Get recent trades on markets
+
+  **Order tools:**
+
+  - `get_orders` - List your orders with filters
+  - `create_order` - Place a new order (buy/sell yes/no)
+  - `cancel_order` - Cancel a resting order
+
 ## 0.2.0
 
 ### Minor Changes
