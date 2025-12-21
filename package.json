@@ -27,7 +27,7 @@
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.2",
     "@changesets/cli": "^2.29.8",
-    "nx": "^21.0.3",
+    "nx": "^22.3.3",
     "typescript": "^5.7.2"
   }
 }
