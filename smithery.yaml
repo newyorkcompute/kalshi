@@ -1,9 +1,9 @@
-# Smithery configuration for @newyorkcompute/kalshi-mcp
-# https://smithery.ai/docs/config
+# Smithery configuration file: https://smithery.ai/docs/config#smitheryyaml
 
 startCommand:
   type: stdio
   configSchema:
+    # JSON Schema defining the configuration options for the MCP.
     type: object
     properties:
       KALSHI_API_KEY:
@@ -15,13 +15,10 @@ startCommand:
     required:
       - KALSHI_API_KEY
       - KALSHI_PRIVATE_KEY
-  commandFunction: |-
-    (config) => ({
-      command: 'npx',
-      args: ['-y', '@newyorkcompute/kalshi-mcp'],
-      env: {
-        KALSHI_API_KEY: config.KALSHI_API_KEY,
-        KALSHI_PRIVATE_KEY: config.KALSHI_PRIVATE_KEY
-      }
-    })
-
+  commandFunction:
+    # A JS function that produces the CLI command based on the given config to start the MCP on stdio.
+    |-
+    (config) => ({ command: 'npx', args: ['-y', '@newyorkcompute/kalshi-mcp'], env: { KALSHI_API_KEY: config.KALSHI_API_KEY, KALSHI_PRIVATE_KEY: config.KALSHI_PRIVATE_KEY } })
+  exampleConfig:
+    KALSHI_API_KEY: "your-api-key-id"
+    KALSHI_PRIVATE_KEY: "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
