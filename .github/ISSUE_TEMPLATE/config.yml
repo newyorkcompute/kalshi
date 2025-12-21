@@ -1,0 +1,9 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Kalshi API Documentation
+    url: https://docs.kalshi.com
+    about: Official Kalshi API documentation
+  - name: MCP Protocol
+    url: https://modelcontextprotocol.io
+    about: Learn about the Model Context Protocol
+
