@@ -35,16 +35,26 @@ Or install globally:
 npm install -g @newyorkcompute/kalshi-mcp
 ```
 
-### Claude Desktop Configuration
+### Claude Code
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+Add the MCP server using the CLI ([docs](https://code.claude.com/docs/en/mcp)):
+
+```bash
+claude mcp add --transport stdio kalshi \
+  --env KALSHI_API_KEY=your-api-key-id \
+  --env KALSHI_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----..." \
+  -- npx -y @newyorkcompute/kalshi-mcp
+```
+
+Or add to your project's `.mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "kalshi": {
+      "type": "stdio",
       "command": "npx",
-      "args": ["@newyorkcompute/kalshi-mcp"],
+      "args": ["-y", "@newyorkcompute/kalshi-mcp"],
       "env": {
         "KALSHI_API_KEY": "your-api-key-id",
         "KALSHI_PRIVATE_KEY": "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
@@ -53,6 +63,46 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
   }
 }
 ```
+
+### Claude Desktop
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "kalshi": {
+      "command": "npx",
+      "args": ["-y", "@newyorkcompute/kalshi-mcp"],
+      "env": {
+        "KALSHI_API_KEY": "your-api-key-id",
+        "KALSHI_PRIVATE_KEY": "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
+      }
+    }
+  }
+}
+```
+
+### Cursor IDE
+
+Add to `.cursor/mcp.json` in your project:
+
+```json
+{
+  "mcpServers": {
+    "kalshi": {
+      "command": "npx",
+      "args": ["-y", "@newyorkcompute/kalshi-mcp"],
+      "env": {
+        "KALSHI_API_KEY": "your-api-key-id",
+        "KALSHI_PRIVATE_KEY": "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
+      }
+    }
+  }
+}
+```
+
+> **Tip:** Use `-y` flag with npx to skip confirmation prompts.
 
 ## MCP Tools
 

@@ -29,6 +29,35 @@ npm install -g @newyorkcompute/kalshi-mcp
 | `KALSHI_PRIVATE_KEY` | Yes | RSA private key (PEM format) |
 | `KALSHI_BASE_PATH` | No | API base URL (default: production) |
 
+### Claude Code
+
+Add the MCP server using the CLI ([docs](https://code.claude.com/docs/en/mcp)):
+
+```bash
+claude mcp add --transport stdio kalshi \
+  --env KALSHI_API_KEY=your-api-key-id \
+  --env KALSHI_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----..." \
+  -- npx -y @newyorkcompute/kalshi-mcp
+```
+
+Or add to your project's `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "kalshi": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@newyorkcompute/kalshi-mcp"],
+      "env": {
+        "KALSHI_API_KEY": "your-api-key-id",
+        "KALSHI_PRIVATE_KEY": "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
+      }
+    }
+  }
+}
+```
+
 ### Claude Desktop
 
 Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
@@ -38,7 +67,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
   "mcpServers": {
     "kalshi": {
       "command": "npx",
-      "args": ["@newyorkcompute/kalshi-mcp"],
+      "args": ["-y", "@newyorkcompute/kalshi-mcp"],
       "env": {
         "KALSHI_API_KEY": "your-api-key-id",
         "KALSHI_PRIVATE_KEY": "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
@@ -50,20 +79,24 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ### Cursor IDE
 
-Add to your MCP configuration:
+Add to `.cursor/mcp.json` in your project:
 
 ```json
 {
-  "kalshi": {
-    "command": "npx",
-    "args": ["@newyorkcompute/kalshi-mcp"],
-    "env": {
-      "KALSHI_API_KEY": "your-api-key-id",
-      "KALSHI_PRIVATE_KEY": "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
+  "mcpServers": {
+    "kalshi": {
+      "command": "npx",
+      "args": ["-y", "@newyorkcompute/kalshi-mcp"],
+      "env": {
+        "KALSHI_API_KEY": "your-api-key-id",
+        "KALSHI_PRIVATE_KEY": "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
+      }
     }
   }
 }
 ```
+
+> **Tip:** Use `-y` flag with npx to skip confirmation prompts.
 
 ## Tools
 
