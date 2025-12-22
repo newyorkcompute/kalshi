@@ -12,11 +12,7 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "isolatedModules": true,
-    "baseUrl": ".",
-    "paths": {
-      "@newyorkcompute/kalshi-mcp": ["packages/mcp/src/index.ts"]
-    }
+    "isolatedModules": true
   },
   "exclude": ["node_modules", "dist"]
 }

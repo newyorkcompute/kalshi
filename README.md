@@ -27,10 +27,19 @@
 | Package | Description | Status |
 |---------|-------------|--------|
 | [`@newyorkcompute/kalshi-mcp`](./packages/mcp) | MCP server for AI agents | [![npm](https://img.shields.io/npm/v/@newyorkcompute/kalshi-mcp)](https://www.npmjs.com/package/@newyorkcompute/kalshi-mcp) |
+| [`@newyorkcompute/kalshi-tui`](./packages/tui) | Terminal UI dashboard | ✅ Available |
+| [`@newyorkcompute/kalshi-core`](./packages/core) | Shared SDK utilities | ✅ Available |
 | [`kalshi-trading`](./skills/kalshi-trading) | Agent Skill for Claude | ✅ Available |
-| `@newyorkcompute/kalshi-cli` | Command-line interface | 🚧 Coming soon |
 
 ## Quick Start
+
+### Terminal UI (TUI)
+
+```bash
+npx @newyorkcompute/kalshi-tui
+```
+
+A beautiful terminal dashboard with real-time market data, orderbook visualization, and trading.
 
 ### MCP Server
 
@@ -240,19 +249,24 @@ npx nx build @newyorkcompute/kalshi-mcp
 ```
 kalshi/
 ├── packages/
-│   └── mcp/                 # @newyorkcompute/kalshi-mcp
-│       ├── src/
-│       │   ├── index.ts     # MCP server entry
-│       │   ├── config.ts    # SDK configuration
-│       │   └── tools/       # Tool implementations
-│       └── package.json
+│   ├── core/                # @newyorkcompute/kalshi-core
+│   │   └── src/
+│   │       ├── config.ts    # SDK configuration
+│   │       ├── format.ts    # Formatting utilities
+│   │       └── types.ts     # Type re-exports
+│   ├── mcp/                 # @newyorkcompute/kalshi-mcp
+│   │   └── src/
+│   │       ├── index.ts     # MCP server entry
+│   │       └── tools/       # Tool implementations
+│   └── tui/                 # @newyorkcompute/kalshi-tui
+│       └── src/
+│           ├── cli.tsx      # CLI entry point
+│           ├── App.tsx      # Main application
+│           └── components/  # UI components
 ├── skills/
 │   └── kalshi-trading/      # Agent Skill
-│       ├── SKILL.md         # Main instructions
-│       ├── AUTHENTICATION.md
-│       ├── API_REFERENCE.md
+│       ├── SKILL.md
 │       └── scripts/
-│           └── kalshi-client.ts
 ├── nx.json                  # NX configuration
 ├── package.json             # Root workspace
 └── tsconfig.base.json       # Shared TypeScript config
