@@ -1,10 +1,13 @@
-#!/usr/bin/env node
+/**
+ * Kalshi MCP Server
+ *
+ * Exports createServer for Smithery integration and runs as CLI when executed directly.
+ */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
 
 import {
-  getKalshiConfig,
   createMarketApi,
   createPortfolioApi,
   createOrdersApi,
@@ -30,16 +33,60 @@ import { registerGetOrders } from "./tools/get-orders.js";
 import { registerCreateOrder } from "./tools/create-order.js";
 import { registerCancelOrder } from "./tools/cancel-order.js";
 
-const SERVER_NAME = "kalshi-mcp";
-const SERVER_VERSION = "0.2.0";
+export const SERVER_NAME = "kalshi-mcp";
+export const SERVER_VERSION = "0.3.0";
 
-async function main() {
-  // Initialize Kalshi SDK
-  const config = getKalshiConfig();
-  const marketApi = createMarketApi(config);
-  const portfolioApi = createPortfolioApi(config);
-  const ordersApi = createOrdersApi(config);
-  const eventsApi = createEventsApi(config);
+/**
+ * Configuration schema for Smithery
+ * Defines the required credentials for Kalshi API authentication
+ */
+export const configSchema = z.object({
+  KALSHI_API_KEY: z.string().describe("Your Kalshi API key ID"),
+  KALSHI_PRIVATE_KEY: z
+    .string()
+    .describe("RSA private key in PEM format for API authentication"),
+});
+
+export type Config = z.infer<typeof configSchema>;
+
+interface CreateServerOptions {
+  config?: Config;
+}
+
+/**
+ * Creates and configures the Kalshi MCP server
+ *
+ * @param options - Server options including config from Smithery or environment
+ * @returns Configured MCP server instance
+ */
+export default function createServer(options: CreateServerOptions = {}) {
+  // Get config from options (Smithery) or fall back to environment variables
+  const apiKey = options.config?.KALSHI_API_KEY || process.env.KALSHI_API_KEY;
+  const privateKey =
+    options.config?.KALSHI_PRIVATE_KEY || process.env.KALSHI_PRIVATE_KEY;
+
+  if (!apiKey || !privateKey) {
+    throw new Error(
+      "Missing Kalshi credentials. Provide KALSHI_API_KEY and KALSHI_PRIVATE_KEY via config or environment variables."
+    );
+  }
+
+  // Create Kalshi SDK configuration
+  const basePath =
+    process.env.KALSHI_BASE_PATH ||
+    "https://api.elections.kalshi.com/trade-api/v2";
+
+  const kalshiConfig = {
+    apiKey,
+    privateKey: privateKey,
+    basePath,
+  };
+
+  // Initialize API clients
+  const marketApi = createMarketApi(kalshiConfig);
+  const portfolioApi = createPortfolioApi(kalshiConfig);
+  const ordersApi = createOrdersApi(kalshiConfig);
+  const eventsApi = createEventsApi(kalshiConfig);
 
   // Create MCP server
   const server = new McpServer({
@@ -66,15 +113,6 @@ async function main() {
   registerCreateOrder(server, ordersApi);
   registerCancelOrder(server, ordersApi);
 
-  // Start server with stdio transport
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-
-  // Log to stderr (stdout is for MCP protocol)
-  console.error(`${SERVER_NAME} v${SERVER_VERSION} started`);
+  // Return the underlying server for Smithery
+  return server.server;
 }
-
-main().catch((error) => {
-  console.error("Fatal error:", error);
-  process.exit(1);
-});
