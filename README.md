@@ -142,7 +142,7 @@ cp -r skills/kalshi-trading .claude/skills/
 | `SKILL.md` | Main instructions and quick start |
 | `AUTHENTICATION.md` | API key setup guide |
 | `API_REFERENCE.md` | Full endpoint documentation |
-| `scripts/kalshi_client.py` | Ready-to-use Python client |
+| `scripts/kalshi-client.ts` | Ready-to-use TypeScript client |
 
 ### Example Usage
 
@@ -252,7 +252,7 @@ kalshi/
 │       ├── AUTHENTICATION.md
 │       ├── API_REFERENCE.md
 │       └── scripts/
-│           └── kalshi_client.py
+│           └── kalshi-client.ts
 ├── nx.json                  # NX configuration
 ├── package.json             # Root workspace
 └── tsconfig.base.json       # Shared TypeScript config

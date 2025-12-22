@@ -9,126 +9,137 @@ Trade on [Kalshi](https://kalshi.com), a CFTC-regulated prediction market exchan
 
 ## Quick Start
 
-```python
-import requests
-import time
-import base64
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding
+```typescript
+import * as crypto from "crypto";
 
-# See AUTHENTICATION.md for full setup
-API_BASE = "https://api.elections.kalshi.com/trade-api/v2"
+const API_BASE = "https://api.elections.kalshi.com/trade-api/v2";
 
-def get_headers(api_key: str, private_key_pem: str, method: str, path: str) -> dict:
-    """Generate authenticated headers for Kalshi API."""
-    timestamp = str(int(time.time() * 1000))
-    message = f"{timestamp}{method}{path}"
-    
-    private_key = serialization.load_pem_private_key(
-        private_key_pem.encode(), password=None
-    )
-    signature = private_key.sign(
-        message.encode(),
-        padding.PKCS1v15(),
-        hashes.SHA256()
-    )
-    
-    return {
-        "KALSHI-ACCESS-KEY": api_key,
-        "KALSHI-ACCESS-SIGNATURE": base64.b64encode(signature).decode(),
-        "KALSHI-ACCESS-TIMESTAMP": timestamp,
-        "Content-Type": "application/json"
-    }
+// See AUTHENTICATION.md for full setup
+function getAuthHeaders(
+  apiKey: string,
+  privateKeyPem: string,
+  method: string,
+  path: string
+): Record<string, string> {
+  const timestamp = Date.now().toString();
+  const message = `${timestamp}${method}${path}`;
+
+  const sign = crypto.createSign("RSA-SHA256");
+  sign.update(message);
+  const signature = sign.sign(privateKeyPem, "base64");
+
+  return {
+    "KALSHI-ACCESS-KEY": apiKey,
+    "KALSHI-ACCESS-SIGNATURE": signature,
+    "KALSHI-ACCESS-TIMESTAMP": timestamp,
+    "Content-Type": "application/json",
+  };
+}
 ```
 
 ## Common Operations
 
 ### Search Markets
 
-```python
-def search_markets(query: str, limit: int = 10) -> list:
-    """Search for markets by keyword."""
-    response = requests.get(
-        f"{API_BASE}/markets",
-        params={"status": "open", "limit": limit}
-    )
-    markets = response.json().get("markets", [])
-    # Filter by query in title
-    return [m for m in markets if query.lower() in m.get("title", "").lower()]
+```typescript
+async function searchMarkets(query: string, limit = 10): Promise<Market[]> {
+  const url = new URL(`${API_BASE}/markets`);
+  url.searchParams.set("status", "open");
+  url.searchParams.set("limit", String(limit));
+
+  const response = await fetch(url.toString());
+  const data = await response.json();
+
+  // Filter by query in title
+  return data.markets.filter((m: Market) =>
+    m.title.toLowerCase().includes(query.toLowerCase())
+  );
+}
 ```
 
 ### Get Market Details
 
-```python
-def get_market(ticker: str) -> dict:
-    """Get details for a specific market."""
-    response = requests.get(f"{API_BASE}/markets/{ticker}")
-    return response.json().get("market", {})
+```typescript
+async function getMarket(ticker: string): Promise<Market> {
+  const response = await fetch(`${API_BASE}/markets/${ticker}`);
+  const data = await response.json();
+  return data.market;
+}
 ```
 
 ### Get Orderbook
 
-```python
-def get_orderbook(ticker: str) -> dict:
-    """Get the orderbook for a market."""
-    response = requests.get(f"{API_BASE}/markets/{ticker}/orderbook")
-    return response.json().get("orderbook", {})
+```typescript
+async function getOrderbook(ticker: string): Promise<Orderbook> {
+  const response = await fetch(`${API_BASE}/markets/${ticker}/orderbook`);
+  const data = await response.json();
+  return data.orderbook;
+}
 ```
 
 ### Check Balance (Authenticated)
 
-```python
-def get_balance(api_key: str, private_key_pem: str) -> dict:
-    """Get account balance."""
-    path = "/portfolio/balance"
-    headers = get_headers(api_key, private_key_pem, "GET", path)
-    response = requests.get(f"{API_BASE}{path}", headers=headers)
-    return response.json()
+```typescript
+async function getBalance(
+  apiKey: string,
+  privateKeyPem: string
+): Promise<Balance> {
+  const path = "/portfolio/balance";
+  const headers = getAuthHeaders(apiKey, privateKeyPem, "GET", path);
+
+  const response = await fetch(`${API_BASE}${path}`, { headers });
+  return response.json();
+}
 ```
 
 ### Get Positions (Authenticated)
 
-```python
-def get_positions(api_key: str, private_key_pem: str) -> list:
-    """Get current market positions."""
-    path = "/portfolio/positions"
-    headers = get_headers(api_key, private_key_pem, "GET", path)
-    response = requests.get(f"{API_BASE}{path}", headers=headers)
-    return response.json().get("market_positions", [])
+```typescript
+async function getPositions(
+  apiKey: string,
+  privateKeyPem: string
+): Promise<Position[]> {
+  const path = "/portfolio/positions";
+  const headers = getAuthHeaders(apiKey, privateKeyPem, "GET", path);
+
+  const response = await fetch(`${API_BASE}${path}`, { headers });
+  const data = await response.json();
+  return data.market_positions;
+}
 ```
 
 ### Place Order (Authenticated)
 
-```python
-def place_order(
-    api_key: str,
-    private_key_pem: str,
-    ticker: str,
-    side: str,  # "yes" or "no"
-    action: str,  # "buy" or "sell"
-    count: int,
-    price: int  # In cents (1-99)
-) -> dict:
-    """Place a limit order."""
-    path = "/portfolio/orders"
-    headers = get_headers(api_key, private_key_pem, "POST", path)
-    
-    payload = {
-        "ticker": ticker,
-        "side": side,
-        "action": action,
-        "count": count,
-        "type": "limit",
-        "yes_price": price if side == "yes" else None,
-        "no_price": price if side == "no" else None
-    }
-    
-    response = requests.post(
-        f"{API_BASE}{path}",
-        headers=headers,
-        json=payload
-    )
-    return response.json()
+```typescript
+async function placeOrder(
+  apiKey: string,
+  privateKeyPem: string,
+  ticker: string,
+  side: "yes" | "no",
+  action: "buy" | "sell",
+  count: number,
+  price: number // In cents (1-99)
+): Promise<Order> {
+  const path = "/portfolio/orders";
+  const headers = getAuthHeaders(apiKey, privateKeyPem, "POST", path);
+
+  const body = {
+    ticker,
+    side,
+    action,
+    count,
+    type: "limit",
+    ...(side === "yes" ? { yes_price: price } : { no_price: price }),
+  };
+
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+  const data = await response.json();
+  return data.order;
+}
 ```
 
 ## Key Concepts
@@ -142,12 +153,11 @@ def place_order(
 
 - [AUTHENTICATION.md](AUTHENTICATION.md) - Detailed API key setup
 - [API_REFERENCE.md](API_REFERENCE.md) - Full endpoint documentation
-- [scripts/kalshi_client.py](scripts/kalshi_client.py) - Ready-to-use helper functions
+- [scripts/kalshi-client.ts](scripts/kalshi-client.ts) - Ready-to-use TypeScript client
 
 ## Tips
 
-1. **Start with market research**: Use `search_markets()` to explore opportunities
+1. **Start with market research**: Use `searchMarkets()` to explore opportunities
 2. **Check liquidity**: Review orderbook depth before placing large orders
 3. **Use limit orders**: Avoid market orders to control execution price
 4. **Monitor positions**: Regularly check your positions and P&L
-
