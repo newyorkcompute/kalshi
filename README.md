@@ -4,21 +4,30 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![NX](https://img.shields.io/badge/maintained%20with-NX-143055?logo=nx)](https://nx.dev)
 
-> Command-native tools for Kalshi prediction markets — MCP server, CLI, and more.
+> Command-native tools for Kalshi prediction markets — MCP server, Agent Skills, and more.
 
 ## Features
 
 - 🤖 **11 MCP Tools** — Markets, events, portfolio, and order management
+- 🧠 **Agent Skills** — Code-first alternative for Claude Code/API
 - 📈 **Real Trading** — Place and cancel orders via AI agents
 - 🔐 **Secure Auth** — RSA-PSS authentication with the official SDK
 - ⚡ **TypeScript** — Fully typed, modern ESM package
 - 📦 **NX Monorepo** — Scalable, cacheable builds
+
+## Choose Your Approach
+
+| Approach | Best For | How It Works |
+|----------|----------|--------------|
+| **MCP Server** | Structured tool access | Run server process, AI calls tools |
+| **Agent Skills** | Code-first workflows | AI reads instructions, writes code directly |
 
 ## Packages
 
 | Package | Description | Status |
 |---------|-------------|--------|
 | [`@newyorkcompute/kalshi-mcp`](./packages/mcp) | MCP server for AI agents | [![npm](https://img.shields.io/npm/v/@newyorkcompute/kalshi-mcp)](https://www.npmjs.com/package/@newyorkcompute/kalshi-mcp) |
+| [`kalshi-trading`](./skills/kalshi-trading) | Agent Skill for Claude | ✅ Available |
 | `@newyorkcompute/kalshi-cli` | Command-line interface | 🚧 Coming soon |
 
 ## Quick Start
@@ -103,6 +112,51 @@ Add to `.cursor/mcp.json` in your project:
 ```
 
 > **Tip:** Use `-y` flag with npx to skip confirmation prompts.
+
+---
+
+## Agent Skills (Alternative to MCP)
+
+Agent Skills let Claude write and execute code directly against the Kalshi API — no MCP server needed.
+
+### Claude Code
+
+```bash
+# Personal (available in all projects)
+cp -r skills/kalshi-trading ~/.claude/skills/
+
+# Or project-specific
+cp -r skills/kalshi-trading .claude/skills/
+```
+
+### Claude.ai
+
+1. Download the `skills/kalshi-trading` folder as a zip
+2. Go to **Settings** → **Features** → **Upload Skill**
+3. Upload the zip file
+
+### What's Included
+
+| File | Purpose |
+|------|---------|
+| `SKILL.md` | Main instructions and quick start |
+| `AUTHENTICATION.md` | API key setup guide |
+| `API_REFERENCE.md` | Full endpoint documentation |
+| `scripts/kalshi-client.ts` | Ready-to-use TypeScript client |
+
+### Example Usage
+
+Once installed, just ask Claude:
+
+> "Search for markets about Bitcoin on Kalshi"
+
+> "Show me my Kalshi portfolio balance and positions"
+
+> "Place a limit order for 10 YES contracts at 45 cents"
+
+Claude will use the Skill's instructions to write and execute the appropriate code.
+
+---
 
 ## MCP Tools
 
@@ -192,6 +246,13 @@ kalshi/
 │       │   ├── config.ts    # SDK configuration
 │       │   └── tools/       # Tool implementations
 │       └── package.json
+├── skills/
+│   └── kalshi-trading/      # Agent Skill
+│       ├── SKILL.md         # Main instructions
+│       ├── AUTHENTICATION.md
+│       ├── API_REFERENCE.md
+│       └── scripts/
+│           └── kalshi-client.ts
 ├── nx.json                  # NX configuration
 ├── package.json             # Root workspace
 └── tsconfig.base.json       # Shared TypeScript config
