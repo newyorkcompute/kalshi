@@ -27,8 +27,8 @@ Response:
 {
   "markets": [
     {
-      "ticker": "PRES-2024-DEM",
-      "title": "Will a Democrat win the 2024 presidential election?",
+      "ticker": "KXBTC-25DEC31-B100000",
+      "title": "Will Bitcoin be above $100,000 on December 31?",
       "status": "open",
       "yes_bid": 52,
       "yes_ask": 53,
@@ -36,7 +36,7 @@ Response:
       "no_ask": 48,
       "volume": 125000,
       "open_interest": 50000,
-      "close_time": "2024-11-05T23:59:59Z"
+      "close_time": "2025-12-31T23:59:59Z"
     }
   ],
   "cursor": "next_page_token"
@@ -53,9 +53,9 @@ Response:
 ```json
 {
   "market": {
-    "ticker": "PRES-2024-DEM",
-    "title": "Will a Democrat win the 2024 presidential election?",
-    "subtitle": "Resolves Yes if Democratic candidate wins",
+    "ticker": "KXBTC-25DEC31-B100000",
+    "title": "Will Bitcoin be above $100,000 on December 31?",
+    "subtitle": "Resolves Yes if BTC price exceeds $100,000",
     "status": "open",
     "yes_bid": 52,
     "yes_ask": 53,
@@ -65,7 +65,7 @@ Response:
     "volume": 125000,
     "volume_24h": 5000,
     "open_interest": 50000,
-    "close_time": "2024-11-05T23:59:59Z",
+    "close_time": "2025-12-31T23:59:59Z",
     "result": null,
     "rules_primary": "Market rules description...",
     "settlement_timer_seconds": 0
@@ -116,12 +116,12 @@ Response:
   "trades": [
     {
       "trade_id": "abc123",
-      "ticker": "PRES-2024-DEM",
+      "ticker": "KXBTC-25DEC31-B100000",
       "count": 100,
       "yes_price": 52,
       "no_price": 48,
       "taker_side": "yes",
-      "created_time": "2024-01-15T10:30:00Z"
+      "created_time": "2025-01-15T10:30:00Z"
     }
   ],
   "cursor": "next_page_token"
@@ -155,10 +155,10 @@ Response:
 ```json
 {
   "event": {
-    "event_ticker": "PRES-2024",
-    "title": "2024 Presidential Election",
-    "category": "Politics",
-    "markets": ["PRES-2024-DEM", "PRES-2024-GOP"]
+    "event_ticker": "KXBTC",
+    "title": "Bitcoin Price Markets",
+    "category": "Crypto",
+    "markets": ["KXBTC-25DEC31-B100000", "KXBTC-25DEC31-B150000"]
   }
 }
 ```
@@ -198,7 +198,7 @@ Response:
 {
   "market_positions": [
     {
-      "ticker": "PRES-2024-DEM",
+      "ticker": "KXBTC-25DEC31-B100000",
       "position": 100,
       "market_exposure": 5200,
       "realized_pnl": 0,
@@ -231,7 +231,7 @@ Response:
   "orders": [
     {
       "order_id": "order123",
-      "ticker": "PRES-2024-DEM",
+      "ticker": "KXBTC-25DEC31-B100000",
       "side": "yes",
       "action": "buy",
       "type": "limit",
@@ -240,7 +240,7 @@ Response:
       "count": 100,
       "remaining_count": 100,
       "status": "resting",
-      "created_time": "2024-01-15T10:00:00Z"
+      "created_time": "2025-01-15T10:00:00Z"
     }
   ]
 }
@@ -255,7 +255,7 @@ POST /portfolio/orders
 Request body:
 ```json
 {
-  "ticker": "PRES-2024-DEM",
+  "ticker": "KXBTC-25DEC31-B100000",
   "side": "yes",
   "action": "buy",
   "type": "limit",
@@ -280,7 +280,7 @@ Response:
 {
   "order": {
     "order_id": "order123",
-    "ticker": "PRES-2024-DEM",
+    "ticker": "KXBTC-25DEC31-B100000",
     "status": "resting"
   }
 }

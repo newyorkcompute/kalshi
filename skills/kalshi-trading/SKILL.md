@@ -7,6 +7,45 @@ description: Trade on Kalshi prediction markets. Use when user wants to check ma
 
 Trade on [Kalshi](https://kalshi.com), a CFTC-regulated prediction market exchange. This skill enables you to query markets, analyze probabilities, manage positions, and execute trades.
 
+## Types
+
+```typescript
+interface Market {
+  ticker: string;
+  title: string;
+  status: string;
+  yes_bid?: number;
+  yes_ask?: number;
+  volume?: number;
+  close_time?: string;
+}
+
+interface Orderbook {
+  yes: [number, number][]; // [price_cents, quantity]
+  no: [number, number][];
+}
+
+interface Balance {
+  balance: number; // cents
+  payout: number;  // pending settlement
+}
+
+interface Position {
+  ticker: string;
+  position: number; // positive = YES, negative = NO
+  market_exposure: number;
+}
+
+interface Order {
+  order_id: string;
+  ticker: string;
+  side: "yes" | "no";
+  action: "buy" | "sell";
+  count: number;
+  status: string;
+}
+```
+
 ## Quick Start
 
 ```typescript

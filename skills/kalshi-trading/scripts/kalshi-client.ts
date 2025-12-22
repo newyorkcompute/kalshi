@@ -363,8 +363,12 @@ Commands:
   markets [--limit N] [--status open|closed]  List markets
   market <ticker>                             Get market details
   orderbook <ticker>                          Get orderbook
-  balance                                     Get account balance (requires auth)
-  positions                                   Get positions (requires auth)
+  trades <ticker> [--limit N]                 Get recent trades
+  events [--limit N]                          List events
+  event <event_ticker>                        Get event details
+  balance                                     Get account balance (auth)
+  positions                                   Get positions (auth)
+  orders [--status resting|executed|canceled] List orders (auth)
     `);
     return;
   }
@@ -411,16 +415,83 @@ Commands:
       break;
     }
 
+    case "trades": {
+      const ticker = args[1];
+      if (!ticker) {
+        console.error("Usage: trades <ticker> [--limit N]");
+        process.exit(1);
+      }
+      const limitIdx = args.indexOf("--limit");
+      const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1]) : 10;
+      const trades = await client.getTrades(ticker, { limit });
+      for (const trade of trades) {
+        console.log(
+          `${trade.created_time}: ${trade.count} @ ${trade.yes_price}¢ (${trade.taker_side})`
+        );
+      }
+      break;
+    }
+
+    case "events": {
+      const limitIdx = args.indexOf("--limit");
+      const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1]) : 10;
+      const events = await client.getEvents({ limit });
+      for (const event of events) {
+        console.log(`${event.event_ticker}: ${event.title}`);
+        if (event.category) console.log(`  Category: ${event.category}`);
+        console.log();
+      }
+      break;
+    }
+
+    case "event": {
+      const eventTicker = args[1];
+      if (!eventTicker) {
+        console.error("Usage: event <event_ticker>");
+        process.exit(1);
+      }
+      const event = await client.getEvent(eventTicker);
+      console.log(JSON.stringify(event, null, 2));
+      break;
+    }
+
     case "balance": {
       const balance = await client.getBalance();
       console.log(`Balance: $${(balance.balance / 100).toFixed(2)}`);
+      if (balance.payout > 0) {
+        console.log(`Pending payout: $${(balance.payout / 100).toFixed(2)}`);
+      }
       break;
     }
 
     case "positions": {
       const positions = await client.getPositions();
-      for (const pos of positions) {
-        console.log(`${pos.ticker}: ${pos.position} contracts`);
+      if (positions.length === 0) {
+        console.log("No open positions");
+      } else {
+        for (const pos of positions) {
+          const side = pos.position > 0 ? "YES" : "NO";
+          console.log(`${pos.ticker}: ${Math.abs(pos.position)} ${side} contracts`);
+          console.log(`  Exposure: $${(pos.market_exposure / 100).toFixed(2)}`);
+        }
+      }
+      break;
+    }
+
+    case "orders": {
+      const statusIdx = args.indexOf("--status");
+      const status = statusIdx !== -1 ? args[statusIdx + 1] : "resting";
+      const orders = await client.getOrders({ status });
+      if (orders.length === 0) {
+        console.log(`No ${status} orders`);
+      } else {
+        for (const order of orders) {
+          const price = order.yes_price ?? order.no_price;
+          console.log(
+            `${order.order_id}: ${order.action} ${order.count} ${order.side.toUpperCase()} @ ${price}¢`
+          );
+          console.log(`  ${order.ticker} | ${order.status} | ${order.remaining_count} remaining`);
+        }
       }
       break;
     }
