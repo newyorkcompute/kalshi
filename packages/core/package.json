@@ -1,14 +1,17 @@
 {
-  "name": "@newyorkcompute/kalshi-mcp",
-  "version": "0.3.0",
-  "description": "MCP server for Kalshi prediction markets — enables AI agents to interact with Kalshi",
+  "name": "@newyorkcompute/kalshi-core",
+  "version": "0.1.0",
+  "description": "Shared utilities for Kalshi prediction market tools — SDK configuration, formatting, and types",
   "author": "NewYorkCompute",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "kalshi-mcp": "./dist/cli.js"
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "files": [
     "dist"
@@ -16,24 +19,15 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/newyorkcompute/kalshi",
-    "directory": "packages/mcp"
+    "directory": "packages/core"
   },
   "keywords": [
     "kalshi",
-    "mcp",
-    "model-context-protocol",
     "prediction-markets",
     "trading",
-    "ai",
-    "claude",
-    "llm",
-    "anthropic",
-    "cursor",
-    "betting",
-    "markets",
-    "forecasting",
     "api",
-    "sdk"
+    "sdk",
+    "utilities"
   ],
   "engines": {
     "node": ">=18.0.0"
@@ -41,7 +35,6 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "start": "node dist/cli.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
@@ -49,17 +42,14 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
-    "@newyorkcompute/kalshi-core": "*",
-    "zod": "^3.24.4"
+    "kalshi-typescript": "^3.3.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.29",
-    "dotenv": "^16.5.0",
     "eslint": "^9.28.0",
     "@eslint/js": "^9.28.0",
-    "tsx": "^4.20.3",
     "typescript-eslint": "^8.33.1",
     "vitest": "^3.2.3"
   }
 }
+

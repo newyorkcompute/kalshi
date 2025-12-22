@@ -18,15 +18,17 @@
       "cache": true
     },
     "typecheck": {
-      "dependsOn": ["^typecheck"],
+      "dependsOn": ["^build"],
       "inputs": ["production", "^production"],
       "cache": true
     },
     "lint": {
+      "dependsOn": ["^build"],
       "inputs": ["default"],
       "cache": true
     },
     "test": {
+      "dependsOn": ["^build"],
       "inputs": ["default", "^production"],
       "cache": true
     }
