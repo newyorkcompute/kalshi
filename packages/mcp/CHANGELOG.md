@@ -1,5 +1,11 @@
 # @newyorkcompute/kalshi-mcp
 
+## 0.4.0
+
+### Minor Changes
+
+- [#25](https://github.com/newyorkcompute/kalshi/pull/25) [`8fb6abb`](https://github.com/newyorkcompute/kalshi/commit/8fb6abb3b735ca59ef28a2b03940414fa33f3276) Thanks [@siddharthkul](https://github.com/siddharthkul)! - Refactor to use shared @newyorkcompute/kalshi-core package for API configuration and utilities
+
 ## 0.3.0
 
 ### Minor Changes
