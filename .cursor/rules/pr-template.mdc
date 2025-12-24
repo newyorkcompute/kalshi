@@ -1,0 +1,12 @@
+---
+description: Always use @kalshi/.github/PULL_REQUEST_TEMPLATE.md for PR descriptions
+alwaysApply: true
+---
+
+# Pull Request Template Rule
+
+1. Before creating any PR, open `@kalshi/.github/PULL_REQUEST_TEMPLATE.md` and follow its sections precisely in your description.
+2. If you rely on the CLI, copy the template into a temporary file, fill in the bullet lists, and pass it via `gh pr create --body-file`.
+3. When submitting a PR through the GitHub UI, paste the template into the description, remove placeholder comments, and fill in the checklist items.
+4. Mention any skipped verification steps in the **Testing** section and leave related checkboxes unchecked.
+5. If you automate PR creation through GitHub MCP, ensure the template still appears in the final description before submitting.

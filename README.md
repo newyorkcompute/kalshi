@@ -27,9 +27,9 @@
 | Package | Description | Status |
 |---------|-------------|--------|
 | [`@newyorkcompute/kalshi-mcp`](./packages/mcp) | MCP server for AI agents | [![npm](https://img.shields.io/npm/v/@newyorkcompute/kalshi-mcp)](https://www.npmjs.com/package/@newyorkcompute/kalshi-mcp) |
-| [`@newyorkcompute/kalshi-tui`](./packages/tui) | Terminal UI dashboard | ✅ Available |
-| [`@newyorkcompute/kalshi-core`](./packages/core) | Shared SDK utilities | ✅ Available |
-| [`kalshi-trading`](./skills/kalshi-trading) | Agent Skill for Claude | ✅ Available |
+| [`@newyorkcompute/kalshi-tui`](./packages/tui) | Terminal UI dashboard | [![npm](https://img.shields.io/npm/v/@newyorkcompute/kalshi-tui)](https://www.npmjs.com/package/@newyorkcompute/kalshi-tui) |
+| [`@newyorkcompute/kalshi-core`](./packages/core) | Shared SDK utilities | [![npm](https://img.shields.io/npm/v/@newyorkcompute/kalshi-core)](https://www.npmjs.com/package/@newyorkcompute/kalshi-core) |
+| [`kalshi-trading`](./skills/kalshi-trading) | Agent Skill for Claude | [![npm](https://img.shields.io/badge/npm-skill-lightgrey?logo=npm&label=skill)](https://github.com/newyorkcompute/kalshi/tree/main/skills/kalshi-trading) |
 
 ## Quick Start
 
