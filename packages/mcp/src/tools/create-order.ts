@@ -8,7 +8,7 @@ import {
   CreateOrderRequestTypeEnum,
 } from "kalshi-typescript";
 import { z } from "zod";
-import { validateOrder } from "./validate-order.js";
+import { validateOrder } from "@newyorkcompute/kalshi-core";
 
 const CreateOrderSchema = z.object({
   ticker: z.string().describe("Market ticker to place order on"),
