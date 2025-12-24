@@ -49,7 +49,7 @@ export async function validateOrder(
     marketStatus = market.status || "unknown";
 
     // Check market is open
-    if (market.status !== "open") {
+    if (market.status?.toLowerCase() !== "open") {
       errors.push(
         `Market ${input.ticker} is ${market.status}, not open for trading`
       );
