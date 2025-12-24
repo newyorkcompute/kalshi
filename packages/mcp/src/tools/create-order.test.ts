@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { OrdersApi } from "kalshi-typescript";
+import { OrdersApi, MarketApi, PortfolioApi } from "kalshi-typescript";
 import { registerCreateOrder } from "./create-order.js";
 
 vi.mock("kalshi-typescript", () => ({
@@ -22,6 +22,8 @@ vi.mock("kalshi-typescript", () => ({
 describe("create_order tool", () => {
   let server: McpServer;
   let mockOrdersApi: { createOrder: ReturnType<typeof vi.fn> };
+  let mockMarketApi: { getMarket: ReturnType<typeof vi.fn> };
+  let mockPortfolioApi: { getBalance: ReturnType<typeof vi.fn> };
   let registeredTool: {
     name: string;
     handler: (params: Record<string, unknown>) => Promise<unknown>;
@@ -38,7 +40,31 @@ describe("create_order tool", () => {
       createOrder: vi.fn(),
     };
 
-    registerCreateOrder(server, mockOrdersApi as unknown as OrdersApi);
+    mockMarketApi = {
+      getMarket: vi.fn().mockResolvedValue({
+        data: {
+          market: {
+            ticker: "KXBTC-25JAN03-B100500",
+            status: "open",
+            yes_ask: 50,
+            yes_bid: 48,
+          },
+        },
+      }),
+    };
+
+    mockPortfolioApi = {
+      getBalance: vi.fn().mockResolvedValue({
+        data: { balance: 100000 }, // $1000 balance
+      }),
+    };
+
+    registerCreateOrder(
+      server,
+      mockOrdersApi as unknown as OrdersApi,
+      mockMarketApi as unknown as MarketApi,
+      mockPortfolioApi as unknown as PortfolioApi
+    );
   });
 
   it("should register the create_order tool", () => {
@@ -113,28 +139,28 @@ describe("create_order tool", () => {
     });
   });
 
-  it("should return error on API failure", async () => {
-    mockOrdersApi.createOrder.mockRejectedValue(
-      new Error("Insufficient balance")
-    );
+  it("should return error on validation failure", async () => {
+    // Mock insufficient balance
+    mockPortfolioApi.getBalance.mockResolvedValue({
+      data: { balance: 100 }, // Only $1 balance
+    });
 
     const result = await registeredTool.handler({
       ticker: "KXBTC-25JAN03-B100500",
       side: "yes",
       action: "buy",
       count: 10,
-      yes_price: 45,
+      yes_price: 45, // Costs 450¢
     });
 
-    expect(result).toEqual({
-      content: [
-        {
-          type: "text",
-          text: "Error creating order: Insufficient balance",
-        },
-      ],
-      isError: true,
-    });
+    const parsed = JSON.parse(
+      (result as { content: [{ text: string }] }).content[0].text
+    );
+    expect(parsed.success).toBe(false);
+    expect(parsed.errors.some((e: string) => e.includes("Insufficient"))).toBe(
+      true
+    );
+    expect(result).toHaveProperty("isError", true);
   });
 });
 
