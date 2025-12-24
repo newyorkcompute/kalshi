@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
 import type { PositionDisplay } from "@newyorkcompute/kalshi-core";
+import { withTimeout } from "@newyorkcompute/kalshi-core";
 import { useKalshi } from "./useKalshi.js";
 import { useAppStore } from "../stores/app-store.js";
+import { usePolling } from "./usePolling.js";
 
 // Helper to check if balance changed
 function balanceChanged(
@@ -24,6 +26,8 @@ interface UsePortfolioResult {
   isLoading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
+  retryDelay: number;
+  isCircuitOpen: boolean;
 }
 
 /**
@@ -42,14 +46,22 @@ export function usePortfolio(pollInterval = 30000): UsePortfolioResult {
     if (!portfolioApi) return;
 
     try {
-      // Fetch balance and positions in parallel
+      // Fetch balance and positions in parallel with timeout
       // API signature: getPositions(cursor, limit, countFilter, settlementStatus, ticker, eventTicker)
       const [balanceResponse, positionsResponse] = await Promise.all([
-        portfolioApi.getBalance(),
-        portfolioApi.getPositions(
-          undefined, // cursor
-          100,       // limit
-          "position" // countFilter
+        withTimeout(
+          portfolioApi.getBalance(),
+          30000,
+          "Balance request timed out"
+        ),
+        withTimeout(
+          portfolioApi.getPositions(
+            undefined, // cursor
+            100,       // limit
+            "position" // countFilter
+          ),
+          30000,
+          "Positions request timed out"
         ),
       ]);
 
@@ -82,23 +94,19 @@ export function usePortfolio(pollInterval = 30000): UsePortfolioResult {
         err instanceof Error ? err.message : "Failed to fetch portfolio"
       );
       setIsConnected(false);
+      throw err; // Re-throw for usePolling to handle
     } finally {
       setIsLoading(false);
     }
   }, [portfolioApi, setIsConnected]);
 
-  // Initial fetch
-  useEffect(() => {
-    fetchPortfolio();
-  }, [fetchPortfolio]);
-
-  // Polling
-  useEffect(() => {
-    if (!portfolioApi) return;
-
-    const interval = setInterval(fetchPortfolio, pollInterval);
-    return () => clearInterval(interval);
-  }, [portfolioApi, pollInterval, fetchPortfolio]);
+  // Use polling hook with exponential backoff
+  const { retryDelay, isCircuitOpen } = usePolling(fetchPortfolio, {
+    interval: pollInterval,
+    maxRetryDelay: 300000, // 5 minutes
+    maxConsecutiveErrors: 5,
+    onError: (err) => setError(err.message),
+  });
 
   return {
     balance,
@@ -106,5 +114,7 @@ export function usePortfolio(pollInterval = 30000): UsePortfolioResult {
     isLoading,
     error,
     refresh: fetchPortfolio,
+    retryDelay,
+    isCircuitOpen,
   };
 }

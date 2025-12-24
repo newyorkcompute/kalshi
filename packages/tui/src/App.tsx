@@ -8,13 +8,14 @@ import { OrderEntry } from "./components/OrderEntry.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { HelpModal } from "./components/HelpModal.js";
 import { SearchBar } from "./components/SearchBar.js";
+import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import { useAppStore } from "./stores/app-store.js";
 import { useKalshi } from "./hooks/useKalshi.js";
 
 /**
- * Main application component
+ * Main application component (wrapped in ErrorBoundary)
  */
-export function App() {
+function AppContent() {
   const { exit } = useApp();
   const [error, setError] = useState<string | null>(null);
   const { isConfigured, configError } = useKalshi();
@@ -103,6 +104,17 @@ export function App() {
       {/* Help modal (overlay) */}
       <HelpModal />
     </Box>
+  );
+}
+
+/**
+ * App component wrapped in ErrorBoundary
+ */
+export function App() {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
   );
 }
 

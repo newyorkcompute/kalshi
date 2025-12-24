@@ -1,6 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
 import type { OrderbookDisplay } from "@newyorkcompute/kalshi-core";
+import { withTimeout } from "@newyorkcompute/kalshi-core";
 import { useKalshi } from "./useKalshi.js";
+import { usePolling } from "./usePolling.js";
 
 // Helper to check if orderbook data has changed
 function orderbookChanged(
@@ -17,6 +19,8 @@ interface UseOrderbookResult {
   isLoading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
+  retryDelay: number;
+  isCircuitOpen: boolean;
 }
 
 /**
@@ -48,7 +52,11 @@ export function useOrderbook(
     
     try {
       // API signature: getMarketOrderbook(ticker, depth)
-      const response = await marketApi.getMarketOrderbook(ticker, 10);
+      const response = await withTimeout(
+        marketApi.getMarketOrderbook(ticker, 10),
+        30000, // 30 second timeout
+        "Orderbook request timed out"
+      );
       const ob = response.data.orderbook;
       let newOrderbook: OrderbookDisplay | null = null;
       
@@ -75,28 +83,26 @@ export function useOrderbook(
       setError(
         err instanceof Error ? err.message : "Failed to fetch orderbook"
       );
+      throw err; // Re-throw for usePolling to handle
     } finally {
       setIsLoading(false);
     }
   }, [marketApi, ticker]);
 
-  // Fetch when ticker changes
-  useEffect(() => {
-    fetchOrderbook();
-  }, [fetchOrderbook]);
-
-  // Polling
-  useEffect(() => {
-    if (!marketApi || !ticker) return;
-
-    const interval = setInterval(fetchOrderbook, pollInterval);
-    return () => clearInterval(interval);
-  }, [marketApi, ticker, pollInterval, fetchOrderbook]);
+  // Use polling hook with exponential backoff
+  const { retryDelay, isCircuitOpen } = usePolling(fetchOrderbook, {
+    interval: pollInterval,
+    maxRetryDelay: 300000, // 5 minutes
+    maxConsecutiveErrors: 5,
+    onError: (err) => setError(err.message),
+  });
 
   return {
     orderbook,
     isLoading,
     error,
     refresh: fetchOrderbook,
+    retryDelay,
+    isCircuitOpen,
   };
 }
