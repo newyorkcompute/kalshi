@@ -70,7 +70,7 @@ describe("usePolling logic", () => {
     for (let i = 0; i < 3; i++) {
       try {
         await fetchFn();
-      } catch (error) {
+      } catch {
         consecutiveErrors++;
         if (consecutiveErrors >= maxConsecutiveErrors) {
           isCircuitOpen = true;
@@ -83,10 +83,9 @@ describe("usePolling logic", () => {
   });
 
   it("should reset consecutive errors on success", async () => {
-    const error = new Error("Temporary error");
     const fetchFn = vi
       .fn()
-      .mockRejectedValueOnce(error)
+      .mockRejectedValueOnce(new Error("Temporary error"))
       .mockResolvedValue(undefined);
 
     let consecutiveErrors = 0;
@@ -108,8 +107,6 @@ describe("usePolling logic", () => {
   });
 
   it("should cap retry delay at maxRetryDelay", async () => {
-    const rateLimitError = new Error("Rate limit exceeded");
-
     let retryDelay = 1000;
     const maxRetryDelay = 5000;
 

@@ -1,14 +1,15 @@
 import { describe, it, expect, vi } from "vitest";
 import { validateOrder } from "./validate-order.js";
+import type { MarketApi, PortfolioApi } from "kalshi-typescript";
 
 describe("validateOrder", () => {
   const mockMarketApi = {
     getMarket: vi.fn(),
-  };
+  } as unknown as MarketApi;
 
   const mockPortfolioApi = {
     getBalance: vi.fn(),
-  };
+  } as unknown as PortfolioApi;
 
   it("should validate successful order", async () => {
     mockMarketApi.getMarket.mockResolvedValue({
@@ -34,8 +35,8 @@ describe("validateOrder", () => {
         count: 10,
         price: 50,
       },
-      mockMarketApi as any,
-      mockPortfolioApi as any
+      mockMarketApi,
+      mockPortfolioApi
     );
 
     expect(result.valid).toBe(true);
@@ -65,8 +66,8 @@ describe("validateOrder", () => {
         count: 10,
         price: 50,
       },
-      mockMarketApi as any,
-      mockPortfolioApi as any
+      mockMarketApi,
+      mockPortfolioApi
     );
 
     expect(result.valid).toBe(false);
@@ -96,8 +97,8 @@ describe("validateOrder", () => {
         count: 10,
         price: 50, // Costs 500¢
       },
-      mockMarketApi as any,
-      mockPortfolioApi as any
+      mockMarketApi,
+      mockPortfolioApi
     );
 
     expect(result.valid).toBe(false);
@@ -129,8 +130,8 @@ describe("validateOrder", () => {
         count: 10,
         price: 80, // 30¢ away from market
       },
-      mockMarketApi as any,
-      mockPortfolioApi as any
+      mockMarketApi,
+      mockPortfolioApi
     );
 
     expect(result.valid).toBe(true);
@@ -163,8 +164,8 @@ describe("validateOrder", () => {
         count: -5,
         price: 50,
       },
-      mockMarketApi as any,
-      mockPortfolioApi as any
+      mockMarketApi,
+      mockPortfolioApi
     );
 
     expect(result.valid).toBe(false);
@@ -194,8 +195,8 @@ describe("validateOrder", () => {
         count: 1500,
         price: 50,
       },
-      mockMarketApi as any,
-      mockPortfolioApi as any
+      mockMarketApi,
+      mockPortfolioApi
     );
 
     expect(result.valid).toBe(true);
@@ -227,8 +228,8 @@ describe("validateOrder", () => {
         count: 10,
         price: 150, // Invalid: >99
       },
-      mockMarketApi as any,
-      mockPortfolioApi as any
+      mockMarketApi,
+      mockPortfolioApi
     );
 
     expect(result.valid).toBe(false);
@@ -258,8 +259,8 @@ describe("validateOrder", () => {
         count: 10,
         price: 50,
       },
-      mockMarketApi as any,
-      mockPortfolioApi as any
+      mockMarketApi,
+      mockPortfolioApi
     );
 
     expect(result.valid).toBe(true);
@@ -277,8 +278,8 @@ describe("validateOrder", () => {
         count: 10,
         price: 50,
       },
-      mockMarketApi as any,
-      mockPortfolioApi as any
+      mockMarketApi,
+      mockPortfolioApi
     );
 
     expect(result.valid).toBe(false);
@@ -310,8 +311,8 @@ describe("validateOrder", () => {
         count: 10,
         // No price provided
       },
-      mockMarketApi as any,
-      mockPortfolioApi as any
+      mockMarketApi,
+      mockPortfolioApi
     );
 
     expect(result.valid).toBe(true);
