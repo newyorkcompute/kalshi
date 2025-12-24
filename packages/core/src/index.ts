@@ -32,3 +32,6 @@ export {
 // Types
 export * from "./types.js";
 
+// Utilities
+export { withTimeout, TimeoutError } from "./with-timeout.js";
+
