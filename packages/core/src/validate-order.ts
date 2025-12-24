@@ -1,4 +1,4 @@
-import type { MarketApi, PortfolioApi } from "@newyorkcompute/kalshi-core";
+import type { MarketApi, PortfolioApi } from "kalshi-typescript";
 
 export interface OrderValidationInput {
   ticker: string;
