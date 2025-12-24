@@ -3,16 +3,19 @@ import { validateOrder } from "./validate-order.js";
 import type { MarketApi, PortfolioApi } from "kalshi-typescript";
 
 describe("validateOrder", () => {
+  const mockGetMarket = vi.fn();
+  const mockGetBalance = vi.fn();
+
   const mockMarketApi = {
-    getMarket: vi.fn(),
+    getMarket: mockGetMarket,
   } as unknown as MarketApi;
 
   const mockPortfolioApi = {
-    getBalance: vi.fn(),
+    getBalance: mockGetBalance,
   } as unknown as PortfolioApi;
 
   it("should validate successful order", async () => {
-    mockMarketApi.getMarket.mockResolvedValue({
+    mockGetMarket.mockResolvedValue({
       data: {
         market: {
           ticker: "TEST-MARKET",
@@ -23,7 +26,7 @@ describe("validateOrder", () => {
       },
     });
 
-    mockPortfolioApi.getBalance.mockResolvedValue({
+    mockGetBalance.mockResolvedValue({
       data: { balance: 10000 },
     });
 
@@ -45,7 +48,7 @@ describe("validateOrder", () => {
   });
 
   it("should reject order on closed market", async () => {
-    mockMarketApi.getMarket.mockResolvedValue({
+    mockGetMarket.mockResolvedValue({
       data: {
         market: {
           ticker: "TEST-MARKET",
@@ -54,7 +57,7 @@ describe("validateOrder", () => {
       },
     });
 
-    mockPortfolioApi.getBalance.mockResolvedValue({
+    mockGetBalance.mockResolvedValue({
       data: { balance: 10000 },
     });
 
@@ -75,7 +78,7 @@ describe("validateOrder", () => {
   });
 
   it("should reject order with insufficient balance", async () => {
-    mockMarketApi.getMarket.mockResolvedValue({
+    mockGetMarket.mockResolvedValue({
       data: {
         market: {
           ticker: "TEST-MARKET",
@@ -85,7 +88,7 @@ describe("validateOrder", () => {
       },
     });
 
-    mockPortfolioApi.getBalance.mockResolvedValue({
+    mockGetBalance.mockResolvedValue({
       data: { balance: 100 }, // Only 100¢
     });
 
@@ -108,7 +111,7 @@ describe("validateOrder", () => {
   });
 
   it("should warn on price far from market", async () => {
-    mockMarketApi.getMarket.mockResolvedValue({
+    mockGetMarket.mockResolvedValue({
       data: {
         market: {
           ticker: "TEST-MARKET",
@@ -118,7 +121,7 @@ describe("validateOrder", () => {
       },
     });
 
-    mockPortfolioApi.getBalance.mockResolvedValue({
+    mockGetBalance.mockResolvedValue({
       data: { balance: 10000 },
     });
 
@@ -142,7 +145,7 @@ describe("validateOrder", () => {
   });
 
   it("should reject negative quantity", async () => {
-    mockMarketApi.getMarket.mockResolvedValue({
+    mockGetMarket.mockResolvedValue({
       data: {
         market: {
           ticker: "TEST-MARKET",
@@ -152,7 +155,7 @@ describe("validateOrder", () => {
       },
     });
 
-    mockPortfolioApi.getBalance.mockResolvedValue({
+    mockGetBalance.mockResolvedValue({
       data: { balance: 10000 },
     });
 
@@ -173,7 +176,7 @@ describe("validateOrder", () => {
   });
 
   it("should warn on large order size", async () => {
-    mockMarketApi.getMarket.mockResolvedValue({
+    mockGetMarket.mockResolvedValue({
       data: {
         market: {
           ticker: "TEST-MARKET",
@@ -183,7 +186,7 @@ describe("validateOrder", () => {
       },
     });
 
-    mockPortfolioApi.getBalance.mockResolvedValue({
+    mockGetBalance.mockResolvedValue({
       data: { balance: 100000 },
     });
 
@@ -206,7 +209,7 @@ describe("validateOrder", () => {
   });
 
   it("should reject invalid price range", async () => {
-    mockMarketApi.getMarket.mockResolvedValue({
+    mockGetMarket.mockResolvedValue({
       data: {
         market: {
           ticker: "TEST-MARKET",
@@ -216,7 +219,7 @@ describe("validateOrder", () => {
       },
     });
 
-    mockPortfolioApi.getBalance.mockResolvedValue({
+    mockGetBalance.mockResolvedValue({
       data: { balance: 10000 },
     });
 
@@ -237,7 +240,7 @@ describe("validateOrder", () => {
   });
 
   it("should allow sell orders without balance check", async () => {
-    mockMarketApi.getMarket.mockResolvedValue({
+    mockGetMarket.mockResolvedValue({
       data: {
         market: {
           ticker: "TEST-MARKET",
@@ -247,7 +250,7 @@ describe("validateOrder", () => {
       },
     });
 
-    mockPortfolioApi.getBalance.mockResolvedValue({
+    mockGetBalance.mockResolvedValue({
       data: { balance: 0 }, // No balance
     });
 
@@ -268,7 +271,7 @@ describe("validateOrder", () => {
   });
 
   it("should handle API errors gracefully", async () => {
-    mockMarketApi.getMarket.mockRejectedValue(new Error("Network error"));
+    mockGetMarket.mockRejectedValue(new Error("Network error"));
 
     const result = await validateOrder(
       {
@@ -289,7 +292,7 @@ describe("validateOrder", () => {
   });
 
   it("should use default price if not provided", async () => {
-    mockMarketApi.getMarket.mockResolvedValue({
+    mockGetMarket.mockResolvedValue({
       data: {
         market: {
           ticker: "TEST-MARKET",
@@ -299,7 +302,7 @@ describe("validateOrder", () => {
       },
     });
 
-    mockPortfolioApi.getBalance.mockResolvedValue({
+    mockGetBalance.mockResolvedValue({
       data: { balance: 10000 },
     });
 
