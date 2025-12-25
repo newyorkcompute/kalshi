@@ -5,10 +5,10 @@
   "author": "NewYorkCompute",
   "license": "MIT",
   "type": "module",
-  "main": "./dist/cli.js",
-  "types": "./dist/cli.d.ts",
+  "main": "./dist/vanilla/index.js",
+  "types": "./dist/vanilla/index.d.ts",
   "bin": {
-    "kalshi-tui": "./dist/cli.js"
+    "kalshi-tui": "./dist/vanilla/index.js"
   },
   "files": [
     "dist"
@@ -27,7 +27,7 @@
     "cli",
     "dashboard",
     "markets",
-    "ink"
+    "ansi"
   ],
   "engines": {
     "node": ">=18.0.0"
@@ -35,7 +35,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "start": "node dist/cli.js",
+    "start": "node dist/vanilla/index.js",
+    "start:ink": "node dist/cli.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
@@ -43,24 +44,13 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@inkjs/ui": "^2.0.0",
     "@newyorkcompute/kalshi-core": "*",
-    "ink": "^5.1.0",
-    "kalshi-typescript": "^3.3.0",
-    "react": "^18.3.1",
-    "zustand": "^5.0.2"
+    "kalshi-typescript": "^3.3.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.28.0",
-    "@testing-library/react": "^16.3.1",
-    "@testing-library/react-hooks": "^8.0.1",
     "@types/node": "^22.15.29",
-    "@types/react": "^18.3.18",
     "eslint": "^9.28.0",
-    "eslint-plugin-react": "^7.37.5",
-    "eslint-plugin-react-hooks": "^5.2.0",
-    "ink-testing-library": "^4.0.0",
-    "react-dom": "^19.2.3",
     "typescript-eslint": "^8.33.1",
     "vitest": "^3.2.3"
   }
