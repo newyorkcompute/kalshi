@@ -32,3 +32,13 @@ export {
 // Types
 export * from "./types.js";
 
+// Utilities
+export { withTimeout, TimeoutError } from "./with-timeout.js";
+
+// Validation
+export {
+  validateOrder,
+  type OrderValidationInput,
+  type OrderValidationResult,
+} from "./validate-order.js";
+

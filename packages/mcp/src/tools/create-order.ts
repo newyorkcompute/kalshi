@@ -1,11 +1,14 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   OrdersApi,
+  MarketApi,
+  PortfolioApi,
   CreateOrderRequestSideEnum,
   CreateOrderRequestActionEnum,
   CreateOrderRequestTypeEnum,
 } from "kalshi-typescript";
 import { z } from "zod";
+import { validateOrder } from "@newyorkcompute/kalshi-core";
 
 const CreateOrderSchema = z.object({
   ticker: z.string().describe("Market ticker to place order on"),
@@ -41,13 +44,58 @@ const CreateOrderSchema = z.object({
 
 type CreateOrderInput = z.infer<typeof CreateOrderSchema>;
 
-export function registerCreateOrder(server: McpServer, ordersApi: OrdersApi) {
+export function registerCreateOrder(
+  server: McpServer,
+  ordersApi: OrdersApi,
+  marketApi: MarketApi,
+  portfolioApi: PortfolioApi
+) {
   server.tool(
     "create_order",
     "Place a new order on a Kalshi market. CAUTION: This will execute a real trade with real money.",
     CreateOrderSchema.shape,
     async (params: CreateOrderInput) => {
       try {
+        // Pre-flight validation
+        const validation = await validateOrder(
+          {
+            ticker: params.ticker,
+            side: params.side,
+            action: params.action,
+            count: params.count,
+            price: params.yes_price || params.no_price,
+          },
+          marketApi,
+          portfolioApi
+        );
+
+        // Return validation errors
+        if (!validation.valid) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(
+                  {
+                    success: false,
+                    errors: validation.errors,
+                    warnings: validation.warnings,
+                    estimatedCost: validation.estimatedCost,
+                    currentBalance: validation.currentBalance,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        // Show warnings but proceed
+        if (validation.warnings.length > 0) {
+          console.warn("Order warnings:", validation.warnings);
+        }
         // Map side and action to SDK enums
         const side =
           params.side === "yes"

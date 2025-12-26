@@ -1,85 +1,57 @@
-import React from "react";
-import { Box, Text } from "ink";
-import { formatCurrency, truncate } from "@newyorkcompute/kalshi-core";
-import { usePortfolio } from "../hooks/usePortfolio.js";
-import { useAppStore } from "../stores/app-store.js";
-
 /**
- * Positions panel showing current holdings
+ * Positions Component
+ * Displays open positions with P&L
  */
-export function Positions() {
-  const { positions, isLoading, error } = usePortfolio();
-  const activePanel = useAppStore((state) => state.activePanel);
-  const isActive = activePanel === "positions";
 
-  // Calculate total exposure
-  const totalExposure = positions.reduce(
-    (sum, pos) => sum + pos.market_exposure,
-    0
-  );
+import { Box, Text } from 'ink';
+
+interface Position {
+  ticker: string;
+  position: number;
+  market_exposure: number;
+}
+
+interface PositionsProps {
+  positions: Position[];
+  height: number;
+}
+
+export function Positions({ positions, height }: PositionsProps) {
+  const formatCurrency = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
   return (
-    <Box
-      flexDirection="column"
-      borderStyle="single"
-      borderColor={isActive ? "green" : "gray"}
-      height={10}
+    <Box 
+      flexDirection="column" 
+      borderStyle="single" 
+      borderColor="gray"
+      height={height}
     >
-      {/* Panel header */}
-      <Box paddingX={1} justifyContent="space-between">
-        <Text bold color={isActive ? "green" : "white"}>
-          POSITIONS
-        </Text>
-        <Text color="gray" dimColor>
-          [F3]
-        </Text>
-      </Box>
-
-      {/* Divider */}
+      {/* Title */}
       <Box paddingX={1}>
-        <Text color="gray">{"─".repeat(40)}</Text>
+        <Text bold> POSITIONS </Text>
       </Box>
 
-      {/* Content */}
+      {/* Positions List */}
       <Box flexDirection="column" paddingX={1} flexGrow={1}>
-        {isLoading && <Text color="gray">Loading positions...</Text>}
-
-        {error && <Text color="red">{error}</Text>}
-
-        {!isLoading && !error && positions.length === 0 && (
+        {positions.length === 0 ? (
           <Text color="gray">No open positions</Text>
-        )}
-
-        {positions.slice(0, 4).map((position) => {
-          const side = position.position > 0 ? "YES" : "NO";
-          const quantity = Math.abs(position.position);
-          const exposure = position.market_exposure;
-
-          return (
-            <Box key={position.ticker} justifyContent="space-between">
-              <Text color="white">
-                {truncate(position.ticker, 18)}
-              </Text>
-              <Box>
-                <Text color={side === "YES" ? "green" : "red"}>
-                  {side === "YES" ? "+" : "-"}
-                  {quantity}
-                </Text>
-                <Text color="gray"> {side}</Text>
+        ) : (
+          positions.slice(0, height - 3).map((pos) => {
+            const side = pos.position > 0 ? 'YES' : 'NO';
+            const sideColor = pos.position > 0 ? 'green' : 'red';
+            
+            return (
+              <Box key={pos.ticker} justifyContent="space-between">
+                <Text>{pos.ticker.slice(0, 18)}</Text>
+                <Box>
+                  <Text color={sideColor}>
+                    {Math.abs(pos.position)} {side}
+                  </Text>
+                  <Text> {formatCurrency(pos.market_exposure)}</Text>
+                </Box>
               </Box>
-              <Text color="white">{formatCurrency(exposure)}</Text>
-            </Box>
-          );
-        })}
-
-        {/* Total exposure */}
-        {positions.length > 0 && (
-          <Box marginTop={1} justifyContent="space-between">
-            <Text color="gray">Total Exposure:</Text>
-            <Text color="white" bold>
-              {formatCurrency(totalExposure)}
-            </Text>
-          </Box>
+            );
+          })
         )}
       </Box>
     </Box>

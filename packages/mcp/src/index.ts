@@ -110,7 +110,7 @@ export default function createServer(options: CreateServerOptions = {}) {
 
   // Register order tools
   registerGetOrders(server, ordersApi);
-  registerCreateOrder(server, ordersApi);
+  registerCreateOrder(server, ordersApi, marketApi, portfolioApi);
   registerCancelOrder(server, ordersApi);
 
   // Return the underlying server for Smithery

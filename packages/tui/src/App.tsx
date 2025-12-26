@@ -1,107 +1,105 @@
-import React, { useEffect, useState } from "react";
-import { Box, Text, useApp, useInput } from "ink";
-import { Header } from "./components/Header.js";
-import { MarketList } from "./components/MarketList.js";
-import { Orderbook } from "./components/Orderbook.js";
-import { Positions } from "./components/Positions.js";
-import { OrderEntry } from "./components/OrderEntry.js";
-import { StatusBar } from "./components/StatusBar.js";
-import { HelpModal } from "./components/HelpModal.js";
-import { SearchBar } from "./components/SearchBar.js";
-import { useAppStore } from "./stores/app-store.js";
-import { useKalshi } from "./hooks/useKalshi.js";
-
 /**
- * Main application component
+ * Kalshi TUI - Main Application
+ * Clean, minimal, beautiful terminal trading
  */
+
+import { Box, useApp, useInput, useStdout } from 'ink';
+import { useState, useEffect } from 'react';
+import { Header } from './components/Header.js';
+import { Markets } from './components/Markets.js';
+import { Orderbook } from './components/Orderbook.js';
+import { Positions } from './components/Positions.js';
+import { Footer } from './components/Footer.js';
+import { useKalshi } from './hooks/useKalshi.js';
+
 export function App() {
   const { exit } = useApp();
-  const [error, setError] = useState<string | null>(null);
-  const { isConfigured, configError } = useKalshi();
-  const selectedMarket = useAppStore((state) => state.selectedMarket);
+  const { stdout } = useStdout();
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  // Get terminal dimensions
+  const width = stdout?.columns ?? 120;
+  const height = stdout?.rows ?? 40;
+
+  // Fetch data from Kalshi
+  const { 
+    markets, 
+    orderbook, 
+    balance, 
+    positions, 
+    isConnected,
+    error,
+    selectMarket 
+  } = useKalshi();
+
+  // Update orderbook when selection changes
+  useEffect(() => {
+    const ticker = markets[selectedIndex]?.ticker;
+    if (ticker) {
+      selectMarket(ticker);
+    }
+  }, [selectedIndex, markets, selectMarket]);
 
   // Handle keyboard input
   useInput((input, key) => {
-    // Quit on 'q' or Ctrl+C
-    if (input === "q" || (key.ctrl && input === "c")) {
+    if (input === 'q') {
       exit();
     }
 
-    // Help on '?'
-    if (input === "?") {
-      useAppStore.getState().toggleHelp();
+    if (key.upArrow) {
+      setSelectedIndex(i => Math.max(0, i - 1));
+    }
+
+    if (key.downArrow) {
+      setSelectedIndex(i => Math.min(markets.length - 1, i + 1));
     }
   });
 
-  // Check configuration on mount
-  useEffect(() => {
-    if (configError) {
-      setError(configError);
-    }
-  }, [configError]);
+  // Layout calculations
+  const leftWidth = Math.floor(width / 2);
+  const rightWidth = width - leftWidth;
+  const contentHeight = height - 6; // Header (3) + Footer (3)
+  const marketsHeight = Math.floor(contentHeight * 0.65);
+  const positionsHeight = contentHeight - marketsHeight;
 
-  // Show error screen if not configured
-  if (error) {
-    return (
-      <Box flexDirection="column" padding={1}>
-        <Box marginBottom={1}>
-          <Text color="red" bold>
-            Configuration Error
-          </Text>
-        </Box>
-        <Text color="gray">{error}</Text>
-        <Box marginTop={1}>
-          <Text color="gray">
-            Set KALSHI_API_KEY and KALSHI_PRIVATE_KEY environment variables.
-          </Text>
-        </Box>
-        <Box marginTop={1}>
-          <Text color="gray">
-            Run `kalshi-tui --help` for more information.
-          </Text>
-        </Box>
-      </Box>
-    );
-  }
-
-  // Loading state
-  if (!isConfigured) {
-    return (
-      <Box flexDirection="column" padding={1}>
-        <Text color="green">▓</Text>
-        <Text> Connecting to Kalshi...</Text>
-      </Box>
-    );
-  }
+  const selectedTicker = markets[selectedIndex]?.ticker ?? '';
 
   return (
-    <Box flexDirection="column" width="100%">
+    <Box flexDirection="column" width={width} height={height}>
       {/* Header */}
-      <Header />
+      <Header 
+        balance={balance} 
+        isConnected={isConnected} 
+        error={error}
+      />
 
-      {/* Search bar (when active) */}
-      <SearchBar />
-
-      {/* Main content area */}
-      <Box flexDirection="row" flexGrow={1}>
-        {/* Left column: Markets and Positions */}
-        <Box flexDirection="column" width="50%">
-          <MarketList />
-          <Positions />
+      {/* Main Content */}
+      <Box flexDirection="row" height={contentHeight}>
+        {/* Left Column */}
+        <Box flexDirection="column" width={leftWidth}>
+          <Markets
+            markets={markets}
+            selectedIndex={selectedIndex}
+            height={marketsHeight}
+          />
+          <Positions 
+            positions={positions} 
+            height={positionsHeight}
+          />
         </Box>
 
-        {/* Right column: Orderbook and Order Entry */}
-        <Box flexDirection="column" width="50%">
-          <Orderbook ticker={selectedMarket} />
-          <OrderEntry ticker={selectedMarket} />
+        {/* Right Column - Orderbook */}
+        <Box width={rightWidth}>
+          <Orderbook
+            ticker={selectedTicker}
+            orderbook={orderbook}
+            height={contentHeight}
+          />
         </Box>
       </Box>
 
-      {/* Status bar */}
-      <StatusBar />
-
-      {/* Help modal (overlay) */}
-      <HelpModal />
+      {/* Footer */}
+      <Footer />
     </Box>
   );
 }

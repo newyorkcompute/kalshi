@@ -1,53 +1,49 @@
-import React from "react";
-import { Box, Text } from "ink";
-import { formatCurrency } from "@newyorkcompute/kalshi-core";
-import { usePortfolio } from "../hooks/usePortfolio.js";
-import { useAppStore } from "../stores/app-store.js";
-
 /**
- * Header component with branding and balance
+ * Header Component
+ * Displays branding, balance, and connection status
  */
-export function Header() {
-  const { balance } = usePortfolio();
-  const isConnected = useAppStore((state) => state.isConnected);
+
+import { Box, Text } from 'ink';
+
+interface HeaderProps {
+  balance: number | null;
+  isConnected: boolean;
+  error: string | null;
+}
+
+export function Header({ balance, isConnected, error }: HeaderProps) {
+  const formatCurrency = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+  const balanceText = balance !== null ? formatCurrency(balance) : '—';
 
   return (
-    <Box
-      borderStyle="single"
+    <Box 
+      flexDirection="row" 
+      justifyContent="space-between" 
+      borderStyle="single" 
       borderColor="gray"
       paddingX={1}
-      justifyContent="space-between"
+      height={3}
     >
-      {/* Left: Branding */}
+      {/* Branding */}
       <Box flexDirection="column">
-        <Box>
-          <Text color="green" bold>
-            ▓
-          </Text>
-          <Text bold> KALSHI</Text>
-        </Box>
-        <Text color="gray" dimColor>
-          NEW YORK COMPUTE
-        </Text>
+        <Text color="green" bold>█ KALSHI</Text>
+        <Text color="gray">NEW YORK COMPUTE</Text>
       </Box>
 
-      {/* Right: Balance and connection status */}
+      {/* Status */}
       <Box flexDirection="column" alignItems="flex-end">
+        <Text>
+          Balance: <Text bold>{balanceText}</Text>
+        </Text>
         <Box>
-          <Text>Balance: </Text>
-          <Text color="white" bold>
-            {balance ? formatCurrency(balance.balance) : "—"}
+          <Text color={isConnected ? 'green' : 'red'}>
+            {isConnected ? '●' : '○'}
           </Text>
+          <Text color="gray"> {isConnected ? 'connected' : 'disconnected'}</Text>
         </Box>
-        <Box>
-          <Text color={isConnected ? "green" : "red"}>
-            {isConnected ? "◉" : "○"}
-          </Text>
-          <Text color="gray" dimColor>
-            {" "}
-            {isConnected ? "connected" : "disconnected"}
-          </Text>
-        </Box>
+        {error && (
+          <Text color="red" dimColor>{error}</Text>
+        )}
       </Box>
     </Box>
   );
