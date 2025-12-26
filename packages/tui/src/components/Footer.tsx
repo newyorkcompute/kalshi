@@ -14,6 +14,7 @@ export function Footer() {
       borderColor="gray"
       paddingX={1}
       height={3}
+      width="100%"
     >
       <Text>
         Built by <Text bold>New York Compute</Text> • <Text color="green">newyorkcompute.xyz</Text>

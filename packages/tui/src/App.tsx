@@ -90,7 +90,7 @@ export function App() {
         </Box>
 
         {/* Right Column - Orderbook */}
-        <Box width={rightWidth}>
+        <Box flexGrow={1}>
           <Orderbook
             market={selectedMarket}
             orderbook={orderbook}

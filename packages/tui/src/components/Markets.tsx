@@ -83,6 +83,7 @@ export function Markets({ markets, selectedIndex, height }: MarketsProps) {
       borderStyle="single" 
       borderColor="green"
       height={height}
+      width="100%"
     >
       {/* Title */}
       <Box paddingX={1}>

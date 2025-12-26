@@ -105,6 +105,7 @@ export function Orderbook({ market, orderbook, height }: OrderbookProps) {
       borderStyle="single" 
       borderColor="gray"
       height={height}
+      width="100%"
     >
       {/* Title */}
       <Box paddingX={1} flexDirection="column">
