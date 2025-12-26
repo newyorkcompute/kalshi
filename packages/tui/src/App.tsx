@@ -10,6 +10,7 @@ import { Markets } from './components/Markets.js';
 import { Orderbook } from './components/Orderbook.js';
 import { Positions } from './components/Positions.js';
 import { Footer } from './components/Footer.js';
+import { PriceChart } from './components/PriceChart.js';
 import { useKalshi } from './hooks/useKalshi.js';
 
 export function App() {
@@ -28,8 +29,10 @@ export function App() {
     balance, 
     positions, 
     isConnected,
+    isRateLimited,
     error,
-    selectMarket 
+    selectMarket,
+    priceHistory,
   } = useKalshi();
 
   // Update orderbook when selection changes
@@ -57,11 +60,16 @@ export function App() {
 
   // Layout calculations
   const leftWidth = Math.floor(width / 2);
+  const rightWidth = width - leftWidth;
   const contentHeight = height - 6; // Header (3) + Footer (3)
   const marketsHeight = Math.floor(contentHeight * 0.65);
   const positionsHeight = contentHeight - marketsHeight;
+  
+  // Right column split: Orderbook (top) + Chart (bottom)
+  const orderbookHeight = Math.floor(contentHeight * 0.55);
+  const chartHeight = contentHeight - orderbookHeight;
 
-  // Get selected market for orderbook
+  // Get selected market for orderbook/chart
   const selectedMarket = markets[selectedIndex] ?? null;
 
   return (
@@ -69,13 +77,14 @@ export function App() {
       {/* Header */}
       <Header 
         balance={balance} 
-        isConnected={isConnected} 
+        isConnected={isConnected}
+        isRateLimited={isRateLimited}
         error={error}
       />
 
       {/* Main Content */}
       <Box flexDirection="row" height={contentHeight}>
-        {/* Left Column */}
+        {/* Left Column: Markets + Positions */}
         <Box flexDirection="column" width={leftWidth}>
           <Markets
             markets={markets}
@@ -88,12 +97,18 @@ export function App() {
           />
         </Box>
 
-        {/* Right Column - Orderbook */}
-        <Box flexGrow={1}>
+        {/* Right Column: Orderbook + Chart */}
+        <Box flexDirection="column" flexGrow={1}>
           <Orderbook
             market={selectedMarket}
             orderbook={orderbook}
-            height={contentHeight}
+            height={orderbookHeight}
+          />
+          <PriceChart
+            ticker={selectedMarket?.ticker ?? null}
+            priceHistory={priceHistory}
+            height={chartHeight}
+            width={rightWidth}
           />
         </Box>
       </Box>

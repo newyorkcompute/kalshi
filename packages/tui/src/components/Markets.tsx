@@ -4,7 +4,7 @@
  */
 
 import { Box, Text } from 'ink';
-import { formatExpiry, getPriceChange, formatPrice } from '../utils.js';
+import { formatExpiry, getPriceChange, formatPrice, formatVolume } from '../utils.js';
 
 interface Market {
   ticker: string;
@@ -43,8 +43,9 @@ export function Markets({ markets, selectedIndex, height }: MarketsProps) {
       width="100%"
     >
       {/* Title */}
-      <Box paddingX={1}>
+      <Box paddingX={1} justifyContent="space-between">
         <Text color="green" bold> MARKETS </Text>
+        <Text color="gray" dimColor>sorted by volume</Text>
       </Box>
 
       {/* Market List */}
@@ -57,6 +58,7 @@ export function Markets({ markets, selectedIndex, height }: MarketsProps) {
             const isSelected = actualIndex === selectedIndex;
             const priceChange = getPriceChange(market.yes_bid, market.previousYesBid);
             const expiry = formatExpiry(market.close_time);
+            const volume = formatVolume(market.volume);
             
             return (
               <Box key={market.ticker} justifyContent="space-between">
@@ -72,10 +74,16 @@ export function Markets({ markets, selectedIndex, height }: MarketsProps) {
                   </Text>
                 </Box>
                 <Box>
+                  {/* Volume */}
+                  {volume && (
+                    <Text color="cyan" dimColor>
+                      {volume.padStart(6)} 
+                    </Text>
+                  )}
                   {/* Expiry time */}
                   {expiry && (
                     <Text color="gray" dimColor>
-                      {expiry.padStart(7)} 
+                      {expiry.padStart(8)} 
                     </Text>
                   )}
                   {/* Price */}
