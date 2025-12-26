@@ -1,7 +1,17 @@
+/**
+ * Get Trades Tool
+ *
+ * MCP tool for fetching recent trades on Kalshi markets.
+ * Returns executed trades with prices, quantities, and timestamps.
+ *
+ * @module tools/get-trades
+ */
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { MarketApi } from "kalshi-typescript";
 import { z } from "zod";
 
+/** Schema for get_trades tool parameters */
 const GetTradesSchema = z.object({
   ticker: z.string().optional().describe("Filter by market ticker"),
   limit: z
@@ -26,6 +36,12 @@ const GetTradesSchema = z.object({
 
 type GetTradesInput = z.infer<typeof GetTradesSchema>;
 
+/**
+ * Registers the get_trades tool with the MCP server.
+ *
+ * @param server - MCP server instance to register the tool with
+ * @param marketApi - Kalshi Market API client
+ */
 export function registerGetTrades(server: McpServer, marketApi: MarketApi) {
   server.tool(
     "get_trades",

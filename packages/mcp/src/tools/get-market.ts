@@ -1,7 +1,17 @@
+/**
+ * Get Market Tool
+ *
+ * MCP tool for fetching detailed information about a specific Kalshi market.
+ * Returns full market details including rules, pricing, volume, and settlement info.
+ *
+ * @module tools/get-market
+ */
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { MarketApi } from "kalshi-typescript";
 import { z } from "zod";
 
+/** Schema for get_market tool parameters */
 const GetMarketSchema = z.object({
   ticker: z
     .string()
@@ -10,6 +20,12 @@ const GetMarketSchema = z.object({
 
 type GetMarketInput = z.infer<typeof GetMarketSchema>;
 
+/**
+ * Registers the get_market tool with the MCP server.
+ *
+ * @param server - MCP server instance to register the tool with
+ * @param marketApi - Kalshi Market API client
+ */
 export function registerGetMarket(server: McpServer, marketApi: MarketApi) {
   server.tool(
     "get_market",

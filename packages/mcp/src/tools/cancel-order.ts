@@ -1,13 +1,29 @@
+/**
+ * Cancel Order Tool
+ *
+ * MCP tool for canceling an existing order on Kalshi.
+ * Only orders with 'resting' status can be canceled.
+ *
+ * @module tools/cancel-order
+ */
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { OrdersApi } from "kalshi-typescript";
 import { z } from "zod";
 
+/** Schema for cancel_order tool parameters */
 const CancelOrderSchema = z.object({
   order_id: z.string().describe("The order ID to cancel"),
 });
 
 type CancelOrderInput = z.infer<typeof CancelOrderSchema>;
 
+/**
+ * Registers the cancel_order tool with the MCP server.
+ *
+ * @param server - MCP server instance to register the tool with
+ * @param ordersApi - Kalshi Orders API client
+ */
 export function registerCancelOrder(server: McpServer, ordersApi: OrdersApi) {
   server.tool(
     "cancel_order",

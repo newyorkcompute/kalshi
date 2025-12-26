@@ -1,9 +1,25 @@
+/**
+ * Get Balance Tool
+ *
+ * MCP tool for fetching the user's Kalshi account balance.
+ * Returns balance and portfolio value in both cents and dollars.
+ *
+ * @module tools/get-balance
+ */
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { PortfolioApi } from "kalshi-typescript";
 import { z } from "zod";
 
+/** Schema for get_balance tool (no parameters required) */
 const GetBalanceSchema = z.object({});
 
+/**
+ * Registers the get_balance tool with the MCP server.
+ *
+ * @param server - MCP server instance to register the tool with
+ * @param portfolioApi - Kalshi Portfolio API client
+ */
 export function registerGetBalance(
   server: McpServer,
   portfolioApi: PortfolioApi

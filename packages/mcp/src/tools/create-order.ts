@@ -1,3 +1,14 @@
+/**
+ * Create Order Tool
+ *
+ * MCP tool for placing new orders on Kalshi markets.
+ * Includes pre-flight validation to check market status, balance, and price reasonableness.
+ *
+ * ⚠️ CAUTION: This tool executes real trades with real money.
+ *
+ * @module tools/create-order
+ */
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   OrdersApi,
@@ -10,6 +21,7 @@ import {
 import { z } from "zod";
 import { validateOrder } from "@newyorkcompute/kalshi-core";
 
+/** Schema for create_order tool parameters */
 const CreateOrderSchema = z.object({
   ticker: z.string().describe("Market ticker to place order on"),
   side: z.enum(["yes", "no"]).describe("Side of the order: 'yes' or 'no'"),
@@ -44,6 +56,14 @@ const CreateOrderSchema = z.object({
 
 type CreateOrderInput = z.infer<typeof CreateOrderSchema>;
 
+/**
+ * Registers the create_order tool with the MCP server.
+ *
+ * @param server - MCP server instance to register the tool with
+ * @param ordersApi - Kalshi Orders API client
+ * @param marketApi - Kalshi Market API client (for validation)
+ * @param portfolioApi - Kalshi Portfolio API client (for balance check)
+ */
 export function registerCreateOrder(
   server: McpServer,
   ordersApi: OrdersApi,

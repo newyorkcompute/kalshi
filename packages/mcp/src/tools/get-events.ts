@@ -1,7 +1,18 @@
+/**
+ * Get Events Tool
+ *
+ * MCP tool for listing Kalshi events.
+ * Events represent real-world occurrences (elections, sports games, etc.)
+ * that contain one or more prediction markets.
+ *
+ * @module tools/get-events
+ */
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { EventsApi, GetEventsStatusEnum } from "kalshi-typescript";
 import { z } from "zod";
 
+/** Schema for get_events tool parameters */
 const GetEventsSchema = z.object({
   limit: z
     .number()
@@ -26,6 +37,12 @@ const GetEventsSchema = z.object({
 
 type GetEventsInput = z.infer<typeof GetEventsSchema>;
 
+/**
+ * Registers the get_events tool with the MCP server.
+ *
+ * @param server - MCP server instance to register the tool with
+ * @param eventsApi - Kalshi Events API client
+ */
 export function registerGetEvents(server: McpServer, eventsApi: EventsApi) {
   server.tool(
     "get_events",

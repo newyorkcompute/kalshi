@@ -1,7 +1,17 @@
+/**
+ * Get Markets Tool
+ *
+ * MCP tool for listing and searching Kalshi prediction markets.
+ * Supports filtering by event, series, status, and specific tickers.
+ *
+ * @module tools/get-markets
+ */
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { MarketApi, GetMarketsStatusEnum } from "kalshi-typescript";
 import { z } from "zod";
 
+/** Schema for get_markets tool parameters */
 const GetMarketsSchema = z.object({
   limit: z
     .number()
@@ -30,6 +40,12 @@ const GetMarketsSchema = z.object({
 
 type GetMarketsInput = z.infer<typeof GetMarketsSchema>;
 
+/**
+ * Registers the get_markets tool with the MCP server.
+ *
+ * @param server - MCP server instance to register the tool with
+ * @param marketApi - Kalshi Market API client
+ */
 export function registerGetMarkets(server: McpServer, marketApi: MarketApi) {
   server.tool(
     "get_markets",

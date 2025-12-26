@@ -1,7 +1,17 @@
+/**
+ * Get Event Tool
+ *
+ * MCP tool for fetching detailed information about a specific Kalshi event.
+ * Returns event details including all associated markets.
+ *
+ * @module tools/get-event
+ */
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { EventsApi } from "kalshi-typescript";
 import { z } from "zod";
 
+/** Schema for get_event tool parameters */
 const GetEventSchema = z.object({
   event_ticker: z.string().describe("The event ticker (e.g., 'KXBTC')"),
   with_nested_markets: z
@@ -12,6 +22,12 @@ const GetEventSchema = z.object({
 
 type GetEventInput = z.infer<typeof GetEventSchema>;
 
+/**
+ * Registers the get_event tool with the MCP server.
+ *
+ * @param server - MCP server instance to register the tool with
+ * @param eventsApi - Kalshi Events API client
+ */
 export function registerGetEvent(server: McpServer, eventsApi: EventsApi) {
   server.tool(
     "get_event",
