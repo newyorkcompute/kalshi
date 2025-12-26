@@ -12,6 +12,8 @@ interface Market {
   yes_bid?: number;
   yes_ask?: number;
   volume?: number;
+  volume_24h?: number;
+  open_interest?: number;
   close_time?: string;
   // For tracking price changes
   previousYesBid?: number;
@@ -42,10 +44,16 @@ export function Markets({ markets, selectedIndex, height }: MarketsProps) {
       height={height}
       width="100%"
     >
-      {/* Title */}
+      {/* Header */}
       <Box paddingX={1} justifyContent="space-between">
         <Text color="green" bold> MARKETS </Text>
-        <Text color="gray" dimColor>sorted by volume</Text>
+        <Box>
+          <Text color="cyan" dimColor>Vol</Text>
+          <Text color="gray" dimColor>   24h</Text>
+          <Text color="magenta" dimColor>    OI</Text>
+          <Text color="gray" dimColor>   Exp</Text>
+          <Text color="white" dimColor> Price</Text>
+        </Box>
       </Box>
 
       {/* Market List */}
@@ -58,7 +66,6 @@ export function Markets({ markets, selectedIndex, height }: MarketsProps) {
             const isSelected = actualIndex === selectedIndex;
             const priceChange = getPriceChange(market.yes_bid, market.previousYesBid);
             const expiry = formatExpiry(market.close_time);
-            const volume = formatVolume(market.volume);
             
             return (
               <Box key={market.ticker} justifyContent="space-between">
@@ -70,22 +77,26 @@ export function Markets({ markets, selectedIndex, height }: MarketsProps) {
                     color={isSelected ? 'green' : 'white'} 
                     bold={isSelected}
                   >
-                    {market.ticker.slice(0, 20)}
+                    {market.ticker.slice(0, 22)}
                   </Text>
                 </Box>
                 <Box>
-                  {/* Volume */}
-                  {volume && (
-                    <Text color="cyan" dimColor>
-                      {volume.padStart(6)} 
-                    </Text>
-                  )}
+                  {/* Total Volume */}
+                  <Text color="cyan" dimColor>
+                    {formatVolume(market.volume).padStart(5)}
+                  </Text>
+                  {/* 24h Volume */}
+                  <Text color="gray" dimColor>
+                    {formatVolume(market.volume_24h).padStart(6)}
+                  </Text>
+                  {/* Open Interest */}
+                  <Text color="magenta" dimColor>
+                    {formatVolume(market.open_interest).padStart(6)}
+                  </Text>
                   {/* Expiry time */}
-                  {expiry && (
-                    <Text color="gray" dimColor>
-                      {expiry.padStart(8)} 
-                    </Text>
-                  )}
+                  <Text color="gray" dimColor>
+                    {(expiry || '').padStart(6)}
+                  </Text>
                   {/* Price */}
                   <Text color={isSelected ? 'green' : 'white'}>
                     {formatPrice(market.yes_bid).padStart(5)}

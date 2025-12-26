@@ -60,6 +60,7 @@ export interface MarketDisplay {
   no_bid?: number;
   no_ask?: number;
   volume?: number;
+  volume_24h?: number;
   open_interest?: number;
   close_time?: string;
 }

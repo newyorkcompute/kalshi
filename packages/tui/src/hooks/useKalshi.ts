@@ -176,6 +176,7 @@ export function useKalshi(): UseKalshiReturn {
           no_bid: m.no_bid,
           no_ask: m.no_ask,
           volume: m.volume,
+          volume_24h: m.volume_24h,
           open_interest: m.open_interest,
           close_time: m.close_time,
           previousYesBid,
