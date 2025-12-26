@@ -25,9 +25,30 @@ export {
   formatPriceChange,
   formatCompactNumber,
   formatRelativeTime,
+  formatExpiry,
+  calculateSpread,
   truncate,
   padString,
 } from "./format.js";
+
+// Cache utilities
+export {
+  getCached,
+  setCache,
+  clearCache,
+  clearAllCache,
+  getCacheStats,
+  CACHE_TTL,
+} from "./cache.js";
+
+// Rate limiting
+export {
+  createRateLimiter,
+  isRateLimitError,
+  type RateLimiter,
+  type RateLimiterConfig,
+  type RateLimiterState,
+} from "./rate-limiter.js";
 
 // Types
 export * from "./types.js";
