@@ -3,7 +3,7 @@
  * Clean, minimal, beautiful terminal trading
  */
 
-import { Box, Text, useApp, useInput, useStdout } from 'ink';
+import { Box, useApp, useInput, useStdout } from 'ink';
 import { useState, useEffect } from 'react';
 import { Header } from './components/Header.js';
 import { Markets } from './components/Markets.js';

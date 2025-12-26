@@ -81,7 +81,7 @@ export function useKalshi(): UseKalshiReturn {
       
       setMarkets(marketData);
       setIsConnected(true);
-    } catch (err) {
+    } catch {
       // Silently fail, will retry
     }
   }, []);
@@ -105,7 +105,7 @@ export function useKalshi(): UseKalshiReturn {
           no: (ob.no_dollars || []).map(parseLevel),
         });
       }
-    } catch (err) {
+    } catch {
       // Silently fail
     }
   }, []);
@@ -129,7 +129,7 @@ export function useKalshi(): UseKalshiReturn {
         }))
       );
       setIsConnected(true);
-    } catch (err) {
+    } catch {
       // Silently fail
     }
   }, []);
