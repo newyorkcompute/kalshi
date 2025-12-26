@@ -27,3 +27,6 @@ npm-debug.log*
 
 # NX
 .nx/
+
+# Coverage
+coverage/

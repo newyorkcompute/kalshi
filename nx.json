@@ -31,6 +31,12 @@
       "dependsOn": ["^build"],
       "inputs": ["default", "^production"],
       "cache": true
+    },
+    "test:coverage": {
+      "dependsOn": ["^build"],
+      "inputs": ["default", "^production"],
+      "outputs": ["{projectRoot}/coverage"],
+      "cache": true
     }
   }
 }
