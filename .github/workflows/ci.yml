@@ -12,6 +12,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changeset:
+    name: Changeset Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check for changeset
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip-changeset') }}
+        run: |
+          echo "Checking for changeset..."
+          npx changeset status --since=origin/main
+
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
