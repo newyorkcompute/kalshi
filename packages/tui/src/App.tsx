@@ -10,12 +10,16 @@ import { Markets } from './components/Markets.js';
 import { Orderbook } from './components/Orderbook.js';
 import { Positions } from './components/Positions.js';
 import { Footer } from './components/Footer.js';
+import { PriceChart } from './components/PriceChart.js';
 import { useKalshi } from './hooks/useKalshi.js';
+
+type RightPanelView = 'orderbook' | 'chart';
 
 export function App() {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [rightPanel, setRightPanel] = useState<RightPanelView>('orderbook');
 
   // Get terminal dimensions
   const width = stdout?.columns ?? 120;
@@ -28,8 +32,10 @@ export function App() {
     balance, 
     positions, 
     isConnected,
+    isRateLimited,
     error,
-    selectMarket 
+    selectMarket,
+    priceHistory,
   } = useKalshi();
 
   // Update orderbook when selection changes
@@ -46,6 +52,11 @@ export function App() {
       exit();
     }
 
+    // Toggle between orderbook and chart
+    if (input === 'c') {
+      setRightPanel(prev => prev === 'orderbook' ? 'chart' : 'orderbook');
+    }
+
     if (key.upArrow) {
       setSelectedIndex(i => Math.max(0, i - 1));
     }
@@ -57,11 +68,12 @@ export function App() {
 
   // Layout calculations
   const leftWidth = Math.floor(width / 2);
+  const rightWidth = width - leftWidth;
   const contentHeight = height - 6; // Header (3) + Footer (3)
   const marketsHeight = Math.floor(contentHeight * 0.65);
   const positionsHeight = contentHeight - marketsHeight;
 
-  // Get selected market for orderbook
+  // Get selected market for orderbook/chart
   const selectedMarket = markets[selectedIndex] ?? null;
 
   return (
@@ -69,7 +81,8 @@ export function App() {
       {/* Header */}
       <Header 
         balance={balance} 
-        isConnected={isConnected} 
+        isConnected={isConnected}
+        isRateLimited={isRateLimited}
         error={error}
       />
 
@@ -88,13 +101,22 @@ export function App() {
           />
         </Box>
 
-        {/* Right Column - Orderbook */}
+        {/* Right Column - Orderbook or Chart */}
         <Box flexGrow={1}>
-          <Orderbook
-            market={selectedMarket}
-            orderbook={orderbook}
-            height={contentHeight}
-          />
+          {rightPanel === 'orderbook' ? (
+            <Orderbook
+              market={selectedMarket}
+              orderbook={orderbook}
+              height={contentHeight}
+            />
+          ) : (
+            <PriceChart
+              ticker={selectedMarket?.ticker ?? null}
+              priceHistory={priceHistory}
+              height={contentHeight}
+              width={rightWidth}
+            />
+          )}
         </Box>
       </Box>
 

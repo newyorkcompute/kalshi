@@ -19,7 +19,7 @@ export function Footer() {
       <Text>
         Built by <Text bold>New York Compute</Text> • <Text color="green">newyorkcompute.xyz</Text>
       </Text>
-      <Text color="gray">[?] Help [q] Quit</Text>
+      <Text color="gray">[↑↓] Navigate [c] Chart [q] Quit</Text>
     </Box>
   );
 }

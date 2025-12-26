@@ -8,6 +8,7 @@
 
 import { render } from 'ink';
 import { App } from './App.js';
+import { ErrorBoundary } from './components/ErrorBoundary.js';
 
 // Handle --help and --version flags
 const args = process.argv.slice(2);
@@ -29,6 +30,7 @@ if (args.includes('--help') || args.includes('-h')) {
 
   Controls:
     ↑/↓      Navigate markets
+    c        Toggle price chart
     q        Quit
 
   Built by New York Compute
@@ -60,6 +62,9 @@ if (!isRawModeSupported) {
   process.exit(1);
 }
 
-// Render the app
-render(<App />);
-
+// Render the app with error boundary
+render(
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>
+);

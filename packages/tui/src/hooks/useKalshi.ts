@@ -1,6 +1,7 @@
 /**
  * useKalshi Hook
  * Manages connection to Kalshi API and data fetching
+ * Includes rate limiting, timeouts, and error handling
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -8,10 +9,17 @@ import {
   createMarketApi, 
   createPortfolioApi, 
   getKalshiConfig,
+  withTimeout,
   type MarketDisplay,
   type OrderbookDisplay,
 } from '@newyorkcompute/kalshi-core';
-import type { MarketApi, PortfolioApi, Market, MarketPosition } from 'kalshi-typescript';
+import type { MarketApi, PortfolioApi, Market, MarketPosition, Trade } from 'kalshi-typescript';
+
+// Constants
+const DEFAULT_TIMEOUT = 30000; // 30 seconds
+const MIN_POLL_INTERVAL = 10000; // 10 seconds
+const MAX_POLL_INTERVAL = 300000; // 5 minutes
+const MAX_CONSECUTIVE_FAILURES = 5;
 
 interface Position {
   ticker: string;
@@ -24,14 +32,36 @@ interface MarketWithHistory extends MarketDisplay {
   previousYesBid?: number;
 }
 
+// Trade data for price history
+interface TradePoint {
+  timestamp: number;
+  price: number;
+  volume: number;
+}
+
 interface UseKalshiReturn {
   markets: MarketWithHistory[];
   orderbook: OrderbookDisplay | null;
   balance: number | null;
   positions: Position[];
   isConnected: boolean;
+  isRateLimited: boolean;
   error: string | null;
   selectMarket: (ticker: string) => void;
+  priceHistory: TradePoint[];
+  fetchPriceHistory: (ticker: string, hours?: number) => Promise<void>;
+}
+
+/**
+ * Check if an error is a rate limit error (429)
+ */
+function isRateLimitError(error: unknown): boolean {
+  if (error instanceof Error) {
+    return error.message.includes('429') || 
+           error.message.toLowerCase().includes('rate limit') ||
+           error.message.toLowerCase().includes('too many requests');
+  }
+  return false;
 }
 
 export function useKalshi(): UseKalshiReturn {
@@ -40,8 +70,10 @@ export function useKalshi(): UseKalshiReturn {
   const [balance, setBalance] = useState<number | null>(null);
   const [positions, setPositions] = useState<Position[]>([]);
   const [isConnected, setIsConnected] = useState(false);
+  const [isRateLimited, setIsRateLimited] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+  const [priceHistory, setPriceHistory] = useState<TradePoint[]>([]);
 
   // API clients
   const marketApiRef = useRef<MarketApi | null>(null);
@@ -49,6 +81,11 @@ export function useKalshi(): UseKalshiReturn {
   
   // Store previous prices for change detection
   const previousPricesRef = useRef<Map<string, number>>(new Map());
+  
+  // Rate limiting state
+  const pollIntervalRef = useRef(MIN_POLL_INTERVAL);
+  const consecutiveFailuresRef = useRef(0);
+  const circuitBreakerOpenRef = useRef(false);
 
   // Initialize API clients
   useEffect(() => {
@@ -64,14 +101,59 @@ export function useKalshi(): UseKalshiReturn {
     }
   }, []);
 
-  // Fetch markets
+  /**
+   * Handle successful API call - reset rate limiting
+   */
+  const handleSuccess = useCallback(() => {
+    consecutiveFailuresRef.current = 0;
+    pollIntervalRef.current = MIN_POLL_INTERVAL;
+    circuitBreakerOpenRef.current = false;
+    setIsRateLimited(false);
+    setIsConnected(true);
+  }, []);
+
+  /**
+   * Handle failed API call - apply exponential backoff
+   */
+  const handleFailure = useCallback((err: unknown) => {
+    consecutiveFailuresRef.current += 1;
+    
+    if (isRateLimitError(err)) {
+      // Exponential backoff for rate limits
+      pollIntervalRef.current = Math.min(
+        pollIntervalRef.current * 2,
+        MAX_POLL_INTERVAL
+      );
+      setIsRateLimited(true);
+      setError(`Rate limited. Backing off to ${Math.round(pollIntervalRef.current / 1000)}s`);
+    }
+    
+    // Circuit breaker
+    if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
+      circuitBreakerOpenRef.current = true;
+      setError(`Too many failures. Pausing requests for ${Math.round(MAX_POLL_INTERVAL / 1000)}s`);
+      
+      // Auto-reset circuit breaker after max interval
+      setTimeout(() => {
+        circuitBreakerOpenRef.current = false;
+        consecutiveFailuresRef.current = 0;
+        pollIntervalRef.current = MIN_POLL_INTERVAL;
+      }, MAX_POLL_INTERVAL);
+    }
+  }, []);
+
+  // Fetch markets with timeout and rate limiting
   const fetchMarkets = useCallback(async () => {
-    if (!marketApiRef.current) return;
+    if (!marketApiRef.current || circuitBreakerOpenRef.current) return;
 
     try {
-      const response = await marketApiRef.current.getMarkets(
-        100, undefined, undefined, undefined, undefined, 
-        undefined, undefined, undefined, undefined, undefined, 'open'
+      const response = await withTimeout(
+        marketApiRef.current.getMarkets(
+          100, undefined, undefined, undefined, undefined, 
+          undefined, undefined, undefined, undefined, undefined, 'open'
+        ),
+        DEFAULT_TIMEOUT,
+        'Markets request timed out'
       );
       
       const marketData = (response.data.markets || []).map((m: Market): MarketWithHistory => {
@@ -100,18 +182,22 @@ export function useKalshi(): UseKalshiReturn {
       });
       
       setMarkets(marketData);
-      setIsConnected(true);
-    } catch {
-      // Silently fail, will retry
+      handleSuccess();
+    } catch (err) {
+      handleFailure(err);
     }
-  }, []);
+  }, [handleSuccess, handleFailure]);
 
-  // Fetch orderbook for selected market
+  // Fetch orderbook for selected market with timeout
   const fetchOrderbook = useCallback(async (ticker: string) => {
-    if (!marketApiRef.current || !ticker) return;
+    if (!marketApiRef.current || !ticker || circuitBreakerOpenRef.current) return;
 
     try {
-      const response = await marketApiRef.current.getMarketOrderbook(ticker, 10);
+      const response = await withTimeout(
+        marketApiRef.current.getMarketOrderbook(ticker, 10),
+        DEFAULT_TIMEOUT,
+        'Orderbook request timed out'
+      );
       const ob = response.data.orderbook;
       
       if (ob) {
@@ -125,19 +211,28 @@ export function useKalshi(): UseKalshiReturn {
           no: (ob.no_dollars || []).map(parseLevel),
         });
       }
-    } catch {
-      // Silently fail
+      handleSuccess();
+    } catch (err) {
+      handleFailure(err);
     }
-  }, []);
+  }, [handleSuccess, handleFailure]);
 
-  // Fetch portfolio data
+  // Fetch portfolio data with timeout
   const fetchPortfolio = useCallback(async () => {
-    if (!portfolioApiRef.current) return;
+    if (!portfolioApiRef.current || circuitBreakerOpenRef.current) return;
 
     try {
       const [balanceRes, positionsRes] = await Promise.all([
-        portfolioApiRef.current.getBalance(),
-        portfolioApiRef.current.getPositions(undefined, 100, 'position'),
+        withTimeout(
+          portfolioApiRef.current.getBalance(),
+          DEFAULT_TIMEOUT,
+          'Balance request timed out'
+        ),
+        withTimeout(
+          portfolioApiRef.current.getPositions(undefined, 100, 'position'),
+          DEFAULT_TIMEOUT,
+          'Positions request timed out'
+        ),
       ]);
 
       setBalance(balanceRes.data.balance || 0);
@@ -148,19 +243,56 @@ export function useKalshi(): UseKalshiReturn {
           market_exposure: p.market_exposure || 0,
         }))
       );
-      setIsConnected(true);
-    } catch {
-      // Silently fail
+      handleSuccess();
+    } catch (err) {
+      handleFailure(err);
     }
-  }, []);
+  }, [handleSuccess, handleFailure]);
+
+  // Fetch price history for a market
+  const fetchPriceHistory = useCallback(async (ticker: string, hours: number = 24) => {
+    if (!marketApiRef.current || circuitBreakerOpenRef.current) return;
+
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      const minTs = now - (hours * 60 * 60);
+
+      const response = await withTimeout(
+        marketApiRef.current.getTrades(
+          1000, // Get up to 1000 trades
+          undefined,
+          ticker,
+          minTs,
+          now
+        ),
+        DEFAULT_TIMEOUT,
+        'Trades request timed out'
+      );
+
+      const trades = response.data.trades || [];
+      
+      // Convert trades to price points
+      const points: TradePoint[] = trades.map((t: Trade) => ({
+        timestamp: new Date(t.created_time || '').getTime(),
+        price: t.yes_price || 0,
+        volume: t.count || 0,
+      })).sort((a, b) => a.timestamp - b.timestamp);
+
+      setPriceHistory(points);
+      handleSuccess();
+    } catch (err) {
+      handleFailure(err);
+    }
+  }, [handleSuccess, handleFailure]);
 
   // Select market and fetch orderbook
   const selectMarket = useCallback((ticker: string) => {
     setSelectedTicker(ticker);
     fetchOrderbook(ticker);
-  }, [fetchOrderbook]);
+    fetchPriceHistory(ticker, 24); // Fetch 24h of price history
+  }, [fetchOrderbook, fetchPriceHistory]);
 
-  // Initial data fetch
+  // Initial data fetch with dynamic polling
   useEffect(() => {
     if (!isConnected) return;
 
@@ -168,13 +300,27 @@ export function useKalshi(): UseKalshiReturn {
     fetchMarkets();
     fetchPortfolio();
 
-    // Set up polling
-    const marketsInterval = setInterval(fetchMarkets, 60000);
-    const portfolioInterval = setInterval(fetchPortfolio, 30000);
+    // Set up dynamic polling with rate limiting
+    let marketsTimeout: NodeJS.Timeout;
+    let portfolioTimeout: NodeJS.Timeout;
+
+    const pollMarkets = () => {
+      fetchMarkets();
+      marketsTimeout = setTimeout(pollMarkets, pollIntervalRef.current);
+    };
+
+    const pollPortfolio = () => {
+      fetchPortfolio();
+      portfolioTimeout = setTimeout(pollPortfolio, pollIntervalRef.current);
+    };
+
+    // Start polling after initial fetch
+    marketsTimeout = setTimeout(pollMarkets, pollIntervalRef.current);
+    portfolioTimeout = setTimeout(pollPortfolio, pollIntervalRef.current);
 
     return () => {
-      clearInterval(marketsInterval);
-      clearInterval(portfolioInterval);
+      clearTimeout(marketsTimeout);
+      clearTimeout(portfolioTimeout);
     };
   }, [isConnected, fetchMarkets, fetchPortfolio]);
 
@@ -182,11 +328,16 @@ export function useKalshi(): UseKalshiReturn {
   useEffect(() => {
     if (!selectedTicker) return;
 
-    const orderbookInterval = setInterval(() => {
-      fetchOrderbook(selectedTicker);
-    }, 30000);
+    let orderbookTimeout: NodeJS.Timeout;
 
-    return () => clearInterval(orderbookInterval);
+    const pollOrderbook = () => {
+      fetchOrderbook(selectedTicker);
+      orderbookTimeout = setTimeout(pollOrderbook, pollIntervalRef.current);
+    };
+
+    orderbookTimeout = setTimeout(pollOrderbook, pollIntervalRef.current);
+
+    return () => clearTimeout(orderbookTimeout);
   }, [selectedTicker, fetchOrderbook]);
 
   return {
@@ -195,7 +346,10 @@ export function useKalshi(): UseKalshiReturn {
     balance,
     positions,
     isConnected,
+    isRateLimited,
     error,
     selectMarket,
+    priceHistory,
+    fetchPriceHistory,
   };
 }
