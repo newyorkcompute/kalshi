@@ -62,7 +62,8 @@ export function App() {
   const marketsHeight = Math.floor(contentHeight * 0.65);
   const positionsHeight = contentHeight - marketsHeight;
 
-  const selectedTicker = markets[selectedIndex]?.ticker ?? '';
+  // Get selected market for orderbook
+  const selectedMarket = markets[selectedIndex] ?? null;
 
   return (
     <Box flexDirection="column" width={width} height={height}>
@@ -91,7 +92,7 @@ export function App() {
         {/* Right Column - Orderbook */}
         <Box width={rightWidth}>
           <Orderbook
-            ticker={selectedTicker}
+            market={selectedMarket}
             orderbook={orderbook}
             height={contentHeight}
           />
@@ -103,4 +104,3 @@ export function App() {
     </Box>
   );
 }
-
