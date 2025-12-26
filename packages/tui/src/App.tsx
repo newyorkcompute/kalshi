@@ -57,7 +57,6 @@ export function App() {
 
   // Layout calculations
   const leftWidth = Math.floor(width / 2);
-  const rightWidth = width - leftWidth;
   const contentHeight = height - 6; // Header (3) + Footer (3)
   const marketsHeight = Math.floor(contentHeight * 0.65);
   const positionsHeight = contentHeight - marketsHeight;

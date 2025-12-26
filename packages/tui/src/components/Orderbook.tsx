@@ -4,6 +4,7 @@
  */
 
 import { Box, Text } from 'ink';
+import { formatExpiry, formatVolume, formatPriceDecimal, calculateSpread } from '../utils.js';
 
 interface OrderbookLevel {
   price: number;
@@ -28,46 +29,7 @@ interface OrderbookProps {
   height: number;
 }
 
-/**
- * Format close time as relative time
- */
-function formatExpiry(closeTime?: string): string {
-  if (!closeTime) return '';
-  
-  const now = new Date();
-  const close = new Date(closeTime);
-  const diffMs = close.getTime() - now.getTime();
-  
-  if (diffMs <= 0) return 'CLOSED';
-  
-  const diffMins = Math.floor(diffMs / (1000 * 60));
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  
-  if (diffDays > 0) {
-    const remainingHours = diffHours % 24;
-    return `${diffDays}d ${remainingHours}h`;
-  }
-  if (diffHours > 0) {
-    const remainingMins = diffMins % 60;
-    return `${diffHours}h ${remainingMins}m`;
-  }
-  return `${diffMins}m`;
-}
-
-/**
- * Format volume with K/M suffix
- */
-function formatVolume(volume?: number): string {
-  if (!volume) return '';
-  if (volume >= 1000000) return `${(volume / 1000000).toFixed(1)}M`;
-  if (volume >= 1000) return `${(volume / 1000).toFixed(1)}K`;
-  return `${volume}`;
-}
-
 export function Orderbook({ market, orderbook, height }: OrderbookProps) {
-  const formatPrice = (cents: number) => `${cents.toFixed(2)}¢`;
-  
   // Parse orderbook into asks (no side, converted to YES equivalent) and bids (yes side)
   const asks: OrderbookLevel[] = (orderbook?.no ?? [])
     .slice(0, 5)
@@ -82,7 +44,7 @@ export function Orderbook({ market, orderbook, height }: OrderbookProps) {
   // Calculate spread
   const bestAsk = asks.length > 0 ? Math.min(...asks.map(a => a.price)) : null;
   const bestBid = bids.length > 0 ? Math.max(...bids.map(b => b.price)) : null;
-  const spread = bestAsk !== null && bestBid !== null ? bestAsk - bestBid : null;
+  const spread = calculateSpread(bestBid, bestAsk);
 
   // Calculate max quantity for bar scaling
   const maxQty = Math.max(
@@ -146,7 +108,7 @@ export function Orderbook({ market, orderbook, height }: OrderbookProps) {
                   {renderBar(level.quantity, 'red')}
                 </Box>
                 <Box>
-                  <Text color="red">{formatPrice(level.price)}</Text>
+                  <Text color="red">{formatPriceDecimal(level.price)}</Text>
                   <Text color="gray"> ({level.quantity})</Text>
                 </Box>
               </Box>
@@ -170,7 +132,7 @@ export function Orderbook({ market, orderbook, height }: OrderbookProps) {
                   {renderBar(level.quantity, 'green')}
                 </Box>
                 <Box>
-                  <Text color="green">{formatPrice(level.price)}</Text>
+                  <Text color="green">{formatPriceDecimal(level.price)}</Text>
                   <Text color="gray"> ({level.quantity})</Text>
                 </Box>
               </Box>
