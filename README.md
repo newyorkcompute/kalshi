@@ -1,6 +1,7 @@
 # @newyorkcompute/kalshi
 
 [![CI](https://img.shields.io/github/actions/workflow/status/newyorkcompute/kalshi/ci.yml?branch=main&label=CI)](https://github.com/newyorkcompute/kalshi/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/newyorkcompute/kalshi/graph/badge.svg)](https://codecov.io/gh/newyorkcompute/kalshi)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![NX](https://img.shields.io/badge/maintained%20with-NX-143055?logo=nx)](https://nx.dev)
 
