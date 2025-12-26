@@ -28,9 +28,26 @@ describe('formatExpiry', () => {
     expect(formatExpiry('2024-12-31T00:00:00Z')).toBe('CLOSED');
   });
 
-  it('formats days and hours for dates > 24h away', () => {
+  it('formats days and hours for dates <= 30 days away', () => {
     expect(formatExpiry('2025-01-03T12:00:00Z')).toBe('2d 0h');
     expect(formatExpiry('2025-01-04T02:00:00Z')).toBe('2d 14h');
+    expect(formatExpiry('2025-01-20T12:00:00Z')).toBe('19d 0h');
+  });
+
+  it('formats just days for dates > 30 days away', () => {
+    expect(formatExpiry('2025-03-01T12:00:00Z')).toBe('59d');
+    expect(formatExpiry('2025-06-01T12:00:00Z')).toBe('151d');
+  });
+
+  it('formats years and months for dates >= 1 year away', () => {
+    expect(formatExpiry('2026-01-01T12:00:00Z')).toBe('1y');
+    expect(formatExpiry('2026-07-01T12:00:00Z')).toBe('1y 6mo');
+    expect(formatExpiry('2028-01-01T12:00:00Z')).toBe('3y');
+  });
+
+  it('returns "distant" for dates > 10 years away', () => {
+    expect(formatExpiry('2040-01-01T12:00:00Z')).toBe('distant');
+    expect(formatExpiry('2100-01-01T12:00:00Z')).toBe('distant');
   });
 
   it('formats hours and minutes for dates < 24h away', () => {

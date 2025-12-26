@@ -181,6 +181,9 @@ export function useKalshi(): UseKalshiReturn {
         };
       });
       
+      // Sort by volume (highest first) - most active markets at top
+      marketData.sort((a, b) => (b.volume || 0) - (a.volume || 0));
+      
       setMarkets(marketData);
       handleSuccess();
     } catch (err) {

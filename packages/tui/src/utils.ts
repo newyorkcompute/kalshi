@@ -5,6 +5,7 @@
 
 /**
  * Format close time as relative time (e.g., "2d 14h", "3h 45m", "45m")
+ * For distant dates (>365 days), shows years or "distant"
  */
 export function formatExpiry(closeTime?: string): string {
   if (!closeTime) return '';
@@ -18,7 +19,20 @@ export function formatExpiry(closeTime?: string): string {
   const diffMins = Math.floor(diffMs / (1000 * 60));
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const diffYears = Math.floor(diffDays / 365);
   
+  // For very distant dates, show years or "distant"
+  if (diffYears > 10) {
+    return 'distant';
+  }
+  if (diffYears >= 1) {
+    const remainingMonths = Math.floor((diffDays % 365) / 30);
+    return remainingMonths > 0 ? `${diffYears}y ${remainingMonths}mo` : `${diffYears}y`;
+  }
+  // For dates > 30 days, show just days
+  if (diffDays > 30) {
+    return `${diffDays}d`;
+  }
   if (diffDays > 0) {
     const remainingHours = diffHours % 24;
     return `${diffDays}d ${remainingHours}h`;
