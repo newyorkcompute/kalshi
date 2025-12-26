@@ -20,40 +20,55 @@ interface PriceChartProps {
 }
 
 /**
- * Aggregate trade points into time buckets for smoother charting
+ * Spread trade points evenly across the chart width
+ * This fills the entire width regardless of time gaps
  */
-function aggregatePrices(trades: TradePoint[], buckets: number): number[] {
+function spreadPrices(trades: TradePoint[], targetPoints: number): number[] {
   if (trades.length === 0) return [];
-  if (trades.length === 1) return [trades[0].price];
+  if (trades.length === 1) {
+    // Single point - fill the width with the same value
+    return Array(targetPoints).fill(trades[0].price);
+  }
 
-  const minTime = trades[0].timestamp;
-  const maxTime = trades[trades.length - 1].timestamp;
-  const timeRange = maxTime - minTime;
-  
-  if (timeRange === 0) return [trades[0].price];
-
-  const bucketSize = timeRange / buckets;
-  const result: number[] = [];
-  
-  for (let i = 0; i < buckets; i++) {
-    const bucketStart = minTime + (i * bucketSize);
-    const bucketEnd = bucketStart + bucketSize;
+  // If we have fewer trades than target points, interpolate
+  if (trades.length <= targetPoints) {
+    const result: number[] = [];
+    const step = (trades.length - 1) / (targetPoints - 1);
     
-    const bucketTrades = trades.filter(
-      t => t.timestamp >= bucketStart && t.timestamp < bucketEnd
-    );
-    
-    if (bucketTrades.length > 0) {
-      // Use volume-weighted average price
-      const totalVolume = bucketTrades.reduce((sum, t) => sum + t.volume, 0);
-      const vwap = totalVolume > 0
-        ? bucketTrades.reduce((sum, t) => sum + (t.price * t.volume), 0) / totalVolume
-        : bucketTrades[bucketTrades.length - 1].price;
-      result.push(vwap);
-    } else if (result.length > 0) {
-      // Fill gaps with last known price
-      result.push(result[result.length - 1]);
+    for (let i = 0; i < targetPoints; i++) {
+      const tradeIndex = i * step;
+      const lowerIndex = Math.floor(tradeIndex);
+      const upperIndex = Math.min(Math.ceil(tradeIndex), trades.length - 1);
+      
+      if (lowerIndex === upperIndex) {
+        result.push(trades[lowerIndex].price);
+      } else {
+        // Linear interpolation between points
+        const fraction = tradeIndex - lowerIndex;
+        const interpolated = trades[lowerIndex].price + 
+          (trades[upperIndex].price - trades[lowerIndex].price) * fraction;
+        result.push(interpolated);
+      }
     }
+    return result;
+  }
+
+  // If we have more trades than target points, sample/aggregate
+  const result: number[] = [];
+  const step = trades.length / targetPoints;
+  
+  for (let i = 0; i < targetPoints; i++) {
+    const startIdx = Math.floor(i * step);
+    const endIdx = Math.floor((i + 1) * step);
+    
+    // Average the prices in this bucket
+    let sum = 0;
+    let count = 0;
+    for (let j = startIdx; j < endIdx && j < trades.length; j++) {
+      sum += trades[j].price;
+      count++;
+    }
+    result.push(count > 0 ? sum / count : trades[startIdx].price);
   }
   
   return result;
@@ -76,8 +91,8 @@ export function PriceChart({ ticker, priceHistory, height, width }: PriceChartPr
   const chartHeight = Math.max(height - 8, 5); // Leave room for labels
   const chartWidth = Math.max(width - 15, 20); // Leave room for Y-axis labels
 
-  // Aggregate prices into chart-friendly format
-  const prices = aggregatePrices(priceHistory, Math.min(chartWidth, priceHistory.length));
+  // Spread prices across the full chart width
+  const prices = spreadPrices(priceHistory, chartWidth);
 
   // Calculate stats
   const currentPrice = prices.length > 0 ? prices[prices.length - 1] : null;
