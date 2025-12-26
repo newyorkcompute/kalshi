@@ -1,9 +1,10 @@
 /**
  * Orderbook Component
- * Visual depth chart showing bids and asks
+ * Visual depth chart showing bids and asks with spread indicator
  */
 
 import { Box, Text } from 'ink';
+import { formatExpiry, formatVolume, formatPriceDecimal, calculateSpread } from '../utils.js';
 
 interface OrderbookLevel {
   price: number;
@@ -15,15 +16,20 @@ interface OrderbookData {
   no: [number, number][];
 }
 
-interface OrderbookProps {
+interface SelectedMarket {
   ticker: string;
+  title: string;
+  close_time?: string;
+  volume?: number;
+}
+
+interface OrderbookProps {
+  market: SelectedMarket | null;
   orderbook: OrderbookData | null;
   height: number;
 }
 
-export function Orderbook({ ticker, orderbook, height }: OrderbookProps) {
-  const formatPrice = (cents: number) => `${cents.toFixed(2)}¢`;
-  
+export function Orderbook({ market, orderbook, height }: OrderbookProps) {
   // Parse orderbook into asks (no side, converted to YES equivalent) and bids (yes side)
   const asks: OrderbookLevel[] = (orderbook?.no ?? [])
     .slice(0, 5)
@@ -34,6 +40,11 @@ export function Orderbook({ ticker, orderbook, height }: OrderbookProps) {
     .slice(0, 5)
     .map(([price, qty]) => ({ price, quantity: qty }))
     .sort((a, b) => b.price - a.price);
+
+  // Calculate spread
+  const bestAsk = asks.length > 0 ? Math.min(...asks.map(a => a.price)) : null;
+  const bestBid = bids.length > 0 ? Math.max(...bids.map(b => b.price)) : null;
+  const spread = calculateSpread(bestBid, bestAsk);
 
   // Calculate max quantity for bar scaling
   const maxQty = Math.max(
@@ -47,17 +58,40 @@ export function Orderbook({ ticker, orderbook, height }: OrderbookProps) {
     return <Text color={color}>{'█'.repeat(barLength)}</Text>;
   };
 
+  const expiry = formatExpiry(market?.close_time);
+  const volume = formatVolume(market?.volume);
+
   return (
     <Box 
       flexDirection="column" 
       borderStyle="single" 
       borderColor="gray"
       height={height}
+      width="100%"
     >
       {/* Title */}
-      <Box paddingX={1}>
-        <Text bold> ORDERBOOK</Text>
-        <Text color="gray">: {ticker || 'Select a market'}</Text>
+      <Box paddingX={1} flexDirection="column">
+        <Box>
+          <Text bold> ORDERBOOK</Text>
+          <Text color="gray">: {market?.ticker || 'Select a market'}</Text>
+        </Box>
+        {/* Market title (truncated) */}
+        {market?.title && (
+          <Text color="cyan" wrap="truncate">
+            {market.title.slice(0, 50)}{market.title.length > 50 ? '…' : ''}
+          </Text>
+        )}
+        {/* Expiry and volume */}
+        {market && (
+          <Box>
+            {expiry && (
+              <Text color="yellow">⏱ {expiry}</Text>
+            )}
+            {volume && (
+              <Text color="gray">  Vol: {volume}</Text>
+            )}
+          </Box>
+        )}
       </Box>
 
       {/* Content */}
@@ -74,15 +108,20 @@ export function Orderbook({ ticker, orderbook, height }: OrderbookProps) {
                   {renderBar(level.quantity, 'red')}
                 </Box>
                 <Box>
-                  <Text color="red">{formatPrice(level.price)}</Text>
+                  <Text color="red">{formatPriceDecimal(level.price)}</Text>
                   <Text color="gray"> ({level.quantity})</Text>
                 </Box>
               </Box>
             ))}
 
             {/* Spread line */}
-            <Box marginY={1}>
-              <Text color="gray">{'─'.repeat(40)}</Text>
+            <Box marginY={1} justifyContent="space-between">
+              <Text color="gray">{'─'.repeat(30)}</Text>
+              {spread !== null && (
+                <Text color="yellow" bold>
+                  SPREAD: {spread.toFixed(2)}¢
+                </Text>
+              )}
             </Box>
 
             {/* Bids (bottom) */}
@@ -93,7 +132,7 @@ export function Orderbook({ ticker, orderbook, height }: OrderbookProps) {
                   {renderBar(level.quantity, 'green')}
                 </Box>
                 <Box>
-                  <Text color="green">{formatPrice(level.price)}</Text>
+                  <Text color="green">{formatPriceDecimal(level.price)}</Text>
                   <Text color="gray"> ({level.quantity})</Text>
                 </Box>
               </Box>
@@ -104,4 +143,3 @@ export function Orderbook({ ticker, orderbook, height }: OrderbookProps) {
     </Box>
   );
 }
-

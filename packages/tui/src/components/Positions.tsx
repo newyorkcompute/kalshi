@@ -25,6 +25,7 @@ export function Positions({ positions, height }: PositionsProps) {
       borderStyle="single" 
       borderColor="gray"
       height={height}
+      width="100%"
     >
       {/* Title */}
       <Box paddingX={1}>

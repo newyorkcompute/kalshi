@@ -57,12 +57,12 @@ export function App() {
 
   // Layout calculations
   const leftWidth = Math.floor(width / 2);
-  const rightWidth = width - leftWidth;
   const contentHeight = height - 6; // Header (3) + Footer (3)
   const marketsHeight = Math.floor(contentHeight * 0.65);
   const positionsHeight = contentHeight - marketsHeight;
 
-  const selectedTicker = markets[selectedIndex]?.ticker ?? '';
+  // Get selected market for orderbook
+  const selectedMarket = markets[selectedIndex] ?? null;
 
   return (
     <Box flexDirection="column" width={width} height={height}>
@@ -89,9 +89,9 @@ export function App() {
         </Box>
 
         {/* Right Column - Orderbook */}
-        <Box width={rightWidth}>
+        <Box flexGrow={1}>
           <Orderbook
-            ticker={selectedTicker}
+            market={selectedMarket}
             orderbook={orderbook}
             height={contentHeight}
           />
@@ -103,4 +103,3 @@ export function App() {
     </Box>
   );
 }
-

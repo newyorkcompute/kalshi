@@ -19,8 +19,13 @@ interface Position {
   market_exposure: number;
 }
 
+// Extended market with previous price for change tracking
+interface MarketWithHistory extends MarketDisplay {
+  previousYesBid?: number;
+}
+
 interface UseKalshiReturn {
-  markets: MarketDisplay[];
+  markets: MarketWithHistory[];
   orderbook: OrderbookDisplay | null;
   balance: number | null;
   positions: Position[];
@@ -30,7 +35,7 @@ interface UseKalshiReturn {
 }
 
 export function useKalshi(): UseKalshiReturn {
-  const [markets, setMarkets] = useState<MarketDisplay[]>([]);
+  const [markets, setMarkets] = useState<MarketWithHistory[]>([]);
   const [orderbook, setOrderbook] = useState<OrderbookDisplay | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
   const [positions, setPositions] = useState<Position[]>([]);
@@ -41,6 +46,9 @@ export function useKalshi(): UseKalshiReturn {
   // API clients
   const marketApiRef = useRef<MarketApi | null>(null);
   const portfolioApiRef = useRef<PortfolioApi | null>(null);
+  
+  // Store previous prices for change detection
+  const previousPricesRef = useRef<Map<string, number>>(new Map());
 
   // Initialize API clients
   useEffect(() => {
@@ -66,18 +74,30 @@ export function useKalshi(): UseKalshiReturn {
         undefined, undefined, undefined, undefined, undefined, 'open'
       );
       
-      const marketData = (response.data.markets || []).map((m: Market) => ({
-        ticker: m.ticker || '',
-        title: m.title || '',
-        status: (m.status || 'open') as MarketDisplay['status'],
-        yes_bid: m.yes_bid,
-        yes_ask: m.yes_ask,
-        no_bid: m.no_bid,
-        no_ask: m.no_ask,
-        volume: m.volume,
-        open_interest: m.open_interest,
-        close_time: m.close_time,
-      }));
+      const marketData = (response.data.markets || []).map((m: Market): MarketWithHistory => {
+        const ticker = m.ticker || '';
+        const currentYesBid = m.yes_bid;
+        const previousYesBid = previousPricesRef.current.get(ticker);
+        
+        // Store current price for next comparison
+        if (currentYesBid !== undefined) {
+          previousPricesRef.current.set(ticker, currentYesBid);
+        }
+        
+        return {
+          ticker,
+          title: m.title || '',
+          status: (m.status || 'open') as MarketDisplay['status'],
+          yes_bid: currentYesBid,
+          yes_ask: m.yes_ask,
+          no_bid: m.no_bid,
+          no_ask: m.no_ask,
+          volume: m.volume,
+          open_interest: m.open_interest,
+          close_time: m.close_time,
+          previousYesBid,
+        };
+      });
       
       setMarkets(marketData);
       setIsConnected(true);
@@ -179,4 +199,3 @@ export function useKalshi(): UseKalshiReturn {
     selectMarket,
   };
 }
-

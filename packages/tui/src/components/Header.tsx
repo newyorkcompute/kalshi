@@ -23,6 +23,7 @@ export function Header({ balance, isConnected, error }: HeaderProps) {
       borderColor="gray"
       paddingX={1}
       height={3}
+      width="100%"
     >
       {/* Branding */}
       <Box flexDirection="column">

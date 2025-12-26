@@ -4,12 +4,17 @@
  */
 
 import { Box, Text } from 'ink';
+import { formatExpiry, getPriceChange, formatPrice } from '../utils.js';
 
 interface Market {
   ticker: string;
   title: string;
   yes_bid?: number;
   yes_ask?: number;
+  volume?: number;
+  close_time?: string;
+  // For tracking price changes
+  previousYesBid?: number;
 }
 
 interface MarketsProps {
@@ -19,8 +24,6 @@ interface MarketsProps {
 }
 
 export function Markets({ markets, selectedIndex, height }: MarketsProps) {
-  const formatPrice = (cents?: number) => cents !== undefined ? `${cents}¢` : '—';
-  
   // Calculate visible window (scroll with selection)
   const visibleRows = height - 4; // Border + title + padding
   const halfWindow = Math.floor(visibleRows / 2);
@@ -37,6 +40,7 @@ export function Markets({ markets, selectedIndex, height }: MarketsProps) {
       borderStyle="single" 
       borderColor="green"
       height={height}
+      width="100%"
     >
       {/* Title */}
       <Box paddingX={1}>
@@ -51,6 +55,8 @@ export function Markets({ markets, selectedIndex, height }: MarketsProps) {
           visibleMarkets.map((market, i) => {
             const actualIndex = startIndex + i;
             const isSelected = actualIndex === selectedIndex;
+            const priceChange = getPriceChange(market.yes_bid, market.previousYesBid);
+            const expiry = formatExpiry(market.close_time);
             
             return (
               <Box key={market.ticker} justifyContent="space-between">
@@ -62,14 +68,22 @@ export function Markets({ markets, selectedIndex, height }: MarketsProps) {
                     color={isSelected ? 'green' : 'white'} 
                     bold={isSelected}
                   >
-                    {market.ticker.slice(0, 22)}
+                    {market.ticker.slice(0, 20)}
                   </Text>
                 </Box>
                 <Box>
+                  {/* Expiry time */}
+                  {expiry && (
+                    <Text color="gray" dimColor>
+                      {expiry.padStart(7)} 
+                    </Text>
+                  )}
+                  {/* Price */}
                   <Text color={isSelected ? 'green' : 'white'}>
-                    {formatPrice(market.yes_bid)}
+                    {formatPrice(market.yes_bid).padStart(5)}
                   </Text>
-                  <Text color="gray"> ━ +0</Text>
+                  {/* Price change indicator */}
+                  <Text color={priceChange.color}> {priceChange.text}</Text>
                 </Box>
               </Box>
             );
@@ -88,4 +102,3 @@ export function Markets({ markets, selectedIndex, height }: MarketsProps) {
     </Box>
   );
 }
-
