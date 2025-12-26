@@ -48,11 +48,11 @@ export function Markets({ markets, selectedIndex, height }: MarketsProps) {
       <Box paddingX={1} justifyContent="space-between">
         <Text color="green" bold> MARKETS </Text>
         <Box>
-          <Text color="cyan" dimColor>Vol</Text>
-          <Text color="gray" dimColor>   24h</Text>
-          <Text color="magenta" dimColor>    OI</Text>
-          <Text color="gray" dimColor>   Exp</Text>
-          <Text color="white" dimColor> Price</Text>
+          <Text color="cyan" dimColor>{'   Vol'}</Text>
+          <Text color="gray" dimColor>{'   24h'}</Text>
+          <Text color="magenta" dimColor>{'    OI'}</Text>
+          <Text color="gray" dimColor>{'    Exp'}</Text>
+          <Text color="white" dimColor>{' Price'}</Text>
         </Box>
       </Box>
 
@@ -83,23 +83,23 @@ export function Markets({ markets, selectedIndex, height }: MarketsProps) {
                 <Box>
                   {/* Total Volume */}
                   <Text color="cyan" dimColor>
-                    {formatVolume(market.volume).padStart(5)}
+                    {formatVolume(market.volume).padStart(6)}
                   </Text>
                   {/* 24h Volume */}
                   <Text color="gray" dimColor>
-                    {formatVolume(market.volume_24h).padStart(6)}
+                    {' '}{formatVolume(market.volume_24h).padStart(5)}
                   </Text>
                   {/* Open Interest */}
                   <Text color="magenta" dimColor>
-                    {formatVolume(market.open_interest).padStart(6)}
+                    {' '}{formatVolume(market.open_interest).padStart(5)}
                   </Text>
                   {/* Expiry time */}
                   <Text color="gray" dimColor>
-                    {(expiry || '').padStart(6)}
+                    {' '}{(expiry || '').padStart(6)}
                   </Text>
                   {/* Price */}
                   <Text color={isSelected ? 'green' : 'white'}>
-                    {formatPrice(market.yes_bid).padStart(5)}
+                    {' '}{formatPrice(market.yes_bid).padStart(4)}
                   </Text>
                   {/* Price change indicator */}
                   <Text color={priceChange.color}> {priceChange.text}</Text>
