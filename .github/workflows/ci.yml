@@ -55,12 +55,16 @@ jobs:
           echo "Checking for changeset..."
           npx changeset status --since=origin/main
 
-  typecheck:
-    name: Typecheck
+  # Main CI job - runs typecheck, lint, test, build
+  ci:
+    name: CI
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Fetch all history for nx affected
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -71,46 +75,42 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Set NX_BASE for affected commands
+      - name: Derive SHAs for nx affected
+        id: set-shas
+        uses: nrwl/nx-set-shas@v4
+
+      # For PRs: use nx affected (faster)
+      # For main: use nx run-many (complete coverage)
       - name: Typecheck
-        run: npm run typecheck
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "🔍 Running typecheck on affected projects..."
+            npx nx affected -t typecheck --base=${{ steps.set-shas.outputs.base }} --head=${{ steps.set-shas.outputs.head }}
+          else
+            echo "🔍 Running typecheck on all projects..."
+            npx nx run-many -t typecheck
+          fi
 
       - name: Lint
-        run: npm run lint
-
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "🔍 Running lint on affected projects..."
+            npx nx affected -t lint --base=${{ steps.set-shas.outputs.base }} --head=${{ steps.set-shas.outputs.head }}
+          else
+            echo "🔍 Running lint on all projects..."
+            npx nx run-many -t lint
+          fi
 
       - name: Test with Coverage
-        run: npm run test:coverage
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "🧪 Running tests on affected projects..."
+            npx nx affected -t test:coverage --base=${{ steps.set-shas.outputs.base }} --head=${{ steps.set-shas.outputs.head }}
+          else
+            echo "🧪 Running tests on all projects..."
+            npx nx run-many -t test:coverage
+          fi
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -121,22 +121,12 @@ jobs:
           fail_ci_if_error: false
           verbose: true
 
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    needs: [typecheck, lint, test]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
-
       - name: Build
-        run: npm run build
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "🏗️ Building affected projects..."
+            npx nx affected -t build --base=${{ steps.set-shas.outputs.base }} --head=${{ steps.set-shas.outputs.head }}
+          else
+            echo "🏗️ Building all projects..."
+            npx nx run-many -t build
+          fi
