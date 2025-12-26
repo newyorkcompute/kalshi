@@ -1,7 +1,17 @@
+/**
+ * Get Orders Tool
+ *
+ * MCP tool for fetching the user's orders on Kalshi markets.
+ * Returns order details including status, prices, quantities, and fill information.
+ *
+ * @module tools/get-orders
+ */
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { OrdersApi } from "kalshi-typescript";
 import { z } from "zod";
 
+/** Schema for get_orders tool parameters */
 const GetOrdersSchema = z.object({
   ticker: z.string().optional().describe("Filter by market ticker"),
   event_ticker: z
@@ -34,6 +44,12 @@ const GetOrdersSchema = z.object({
 
 type GetOrdersInput = z.infer<typeof GetOrdersSchema>;
 
+/**
+ * Registers the get_orders tool with the MCP server.
+ *
+ * @param server - MCP server instance to register the tool with
+ * @param ordersApi - Kalshi Orders API client
+ */
 export function registerGetOrders(server: McpServer, ordersApi: OrdersApi) {
   server.tool(
     "get_orders",

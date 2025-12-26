@@ -6,6 +6,15 @@
 
 /**
  * Format a price in cents to a display string (e.g., 45 -> "45¢")
+ *
+ * @param cents - Price in cents (0-100 for Kalshi markets)
+ * @returns Formatted price string with cent symbol, or "—" if null/undefined
+ *
+ * @example
+ * ```ts
+ * formatPrice(45)        // "45¢"
+ * formatPrice(null)      // "—"
+ * ```
  */
 export function formatPrice(cents: number | undefined | null): string {
   if (cents === undefined || cents === null) {
@@ -16,6 +25,15 @@ export function formatPrice(cents: number | undefined | null): string {
 
 /**
  * Format a price in cents to dollars (e.g., 4500 -> "$45.00")
+ *
+ * @param cents - Amount in cents
+ * @returns Formatted dollar string with currency symbol, or "—" if null/undefined
+ *
+ * @example
+ * ```ts
+ * formatCurrency(4500)   // "$45.00"
+ * formatCurrency(50)     // "$0.50"
+ * ```
  */
 export function formatCurrency(cents: number | undefined | null): string {
   if (cents === undefined || cents === null) {
@@ -27,6 +45,15 @@ export function formatCurrency(cents: number | undefined | null): string {
 
 /**
  * Format a number as a percentage (e.g., 0.45 -> "45%")
+ *
+ * @param value - Decimal value between 0 and 1
+ * @returns Formatted percentage string, or "—" if null/undefined
+ *
+ * @example
+ * ```ts
+ * formatPercent(0.45)    // "45%"
+ * formatPercent(1.0)     // "100%"
+ * ```
  */
 export function formatPercent(value: number | undefined | null): string {
   if (value === undefined || value === null) {
@@ -36,7 +63,17 @@ export function formatPercent(value: number | undefined | null): string {
 }
 
 /**
- * Format a price change with indicator (e.g., 2 -> "▲ +2", -3 -> "▼ -3", 0 -> "━ 0")
+ * Format a price change with visual indicator
+ *
+ * @param change - Price change in cents (positive, negative, or zero)
+ * @returns Formatted string with arrow indicator
+ *
+ * @example
+ * ```ts
+ * formatPriceChange(2)   // "▲ +2"
+ * formatPriceChange(-3)  // "▼ -3"
+ * formatPriceChange(0)   // "━ 0"
+ * ```
  */
 export function formatPriceChange(change: number): string {
   if (change > 0) {
@@ -48,7 +85,17 @@ export function formatPriceChange(change: number): string {
 }
 
 /**
- * Format a large number with abbreviations (e.g., 1500000 -> "1.5M")
+ * Format a large number with K/M abbreviations
+ *
+ * @param value - Number to format
+ * @returns Compact string with K (thousands) or M (millions) suffix
+ *
+ * @example
+ * ```ts
+ * formatCompactNumber(1500000)  // "1.5M"
+ * formatCompactNumber(2500)     // "2.5K"
+ * formatCompactNumber(500)      // "500"
+ * ```
  */
 export function formatCompactNumber(value: number | undefined | null): string {
   if (value === undefined || value === null) {
@@ -185,6 +232,16 @@ export function calculateSpread(
 
 /**
  * Truncate a string to a maximum length with ellipsis
+ *
+ * @param str - String to truncate
+ * @param maxLength - Maximum length including ellipsis
+ * @returns Truncated string with "…" if needed
+ *
+ * @example
+ * ```ts
+ * truncate("Hello World", 8)  // "Hello W…"
+ * truncate("Hi", 8)           // "Hi"
+ * ```
  */
 export function truncate(str: string, maxLength: number): string {
   if (str.length <= maxLength) {
@@ -195,6 +252,18 @@ export function truncate(str: string, maxLength: number): string {
 
 /**
  * Pad a string to a fixed width (left or right aligned)
+ *
+ * @param str - String to pad
+ * @param width - Target width
+ * @param align - Alignment direction ("left" adds padding right, "right" adds padding left)
+ * @returns Padded string, truncated if longer than width
+ *
+ * @example
+ * ```ts
+ * padString("Hi", 5, "left")   // "Hi   "
+ * padString("Hi", 5, "right")  // "   Hi"
+ * padString("Hello World", 5)  // "Hello"
+ * ```
  */
 export function padString(
   str: string,

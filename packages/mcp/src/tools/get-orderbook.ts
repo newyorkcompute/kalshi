@@ -1,7 +1,17 @@
+/**
+ * Get Orderbook Tool
+ *
+ * MCP tool for fetching the orderbook for a Kalshi market.
+ * Returns bid price levels with quantities for both yes and no sides.
+ *
+ * @module tools/get-orderbook
+ */
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { MarketApi } from "kalshi-typescript";
 import { z } from "zod";
 
+/** Schema for get_orderbook tool parameters */
 const GetOrderbookSchema = z.object({
   ticker: z
     .string()
@@ -16,6 +26,12 @@ const GetOrderbookSchema = z.object({
 
 type GetOrderbookInput = z.infer<typeof GetOrderbookSchema>;
 
+/**
+ * Registers the get_orderbook tool with the MCP server.
+ *
+ * @param server - MCP server instance to register the tool with
+ * @param marketApi - Kalshi Market API client
+ */
 export function registerGetOrderbook(server: McpServer, marketApi: MarketApi) {
   server.tool(
     "get_orderbook",

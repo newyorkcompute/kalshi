@@ -1,7 +1,17 @@
+/**
+ * Get Positions Tool
+ *
+ * MCP tool for fetching the user's current positions on Kalshi markets.
+ * Returns contracts held, average prices, exposure, and P&L information.
+ *
+ * @module tools/get-positions
+ */
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { PortfolioApi } from "kalshi-typescript";
 import { z } from "zod";
 
+/** Schema for get_positions tool parameters */
 const GetPositionsSchema = z.object({
   limit: z
     .number()
@@ -26,6 +36,12 @@ const GetPositionsSchema = z.object({
 
 type GetPositionsInput = z.infer<typeof GetPositionsSchema>;
 
+/**
+ * Registers the get_positions tool with the MCP server.
+ *
+ * @param server - MCP server instance to register the tool with
+ * @param portfolioApi - Kalshi Portfolio API client
+ */
 export function registerGetPositions(
   server: McpServer,
   portfolioApi: PortfolioApi
