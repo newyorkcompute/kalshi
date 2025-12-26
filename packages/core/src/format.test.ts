@@ -5,6 +5,7 @@ import {
   formatPercent,
   formatPriceChange,
   formatCompactNumber,
+  formatRelativeTime,
   formatExpiry,
   calculateSpread,
   truncate,
@@ -113,6 +114,57 @@ describe("padString", () => {
 
   it("truncates strings that are too long", () => {
     expect(padString("Hello World", 5)).toBe("Hello");
+  });
+});
+
+describe("formatRelativeTime", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2025-06-15T12:00:00Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("returns 'now' for current time", () => {
+    expect(formatRelativeTime('2025-06-15T12:00:00Z')).toBe('now');
+    expect(formatRelativeTime(new Date('2025-06-15T12:00:30Z'))).toBe('now');
+  });
+
+  it("formats past minutes", () => {
+    expect(formatRelativeTime('2025-06-15T11:30:00Z')).toBe('30m ago');
+    expect(formatRelativeTime('2025-06-15T11:45:00Z')).toBe('15m ago');
+  });
+
+  it("formats past hours", () => {
+    expect(formatRelativeTime('2025-06-15T09:00:00Z')).toBe('3h ago');
+    expect(formatRelativeTime('2025-06-15T06:00:00Z')).toBe('6h ago');
+  });
+
+  it("formats past days", () => {
+    expect(formatRelativeTime('2025-06-13T12:00:00Z')).toBe('2d ago');
+    expect(formatRelativeTime('2025-06-10T12:00:00Z')).toBe('5d ago');
+  });
+
+  it("formats future minutes", () => {
+    expect(formatRelativeTime('2025-06-15T12:30:00Z')).toBe('in 30m');
+    expect(formatRelativeTime('2025-06-15T12:15:00Z')).toBe('in 15m');
+  });
+
+  it("formats future hours", () => {
+    expect(formatRelativeTime('2025-06-15T15:00:00Z')).toBe('in 3h');
+    expect(formatRelativeTime('2025-06-15T18:00:00Z')).toBe('in 6h');
+  });
+
+  it("formats future days", () => {
+    expect(formatRelativeTime('2025-06-17T12:00:00Z')).toBe('in 2d');
+    expect(formatRelativeTime('2025-06-20T12:00:00Z')).toBe('in 5d');
+  });
+
+  it("accepts Date objects", () => {
+    expect(formatRelativeTime(new Date('2025-06-15T11:00:00Z'))).toBe('1h ago');
+    expect(formatRelativeTime(new Date('2025-06-16T12:00:00Z'))).toBe('in 1d');
   });
 });
 
