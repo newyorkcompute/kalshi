@@ -1,10 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   formatPrice,
   formatCurrency,
   formatPercent,
   formatPriceChange,
   formatCompactNumber,
+  formatExpiry,
+  calculateSpread,
   truncate,
   padString,
 } from "./format.js";
@@ -111,6 +113,86 @@ describe("padString", () => {
 
   it("truncates strings that are too long", () => {
     expect(padString("Hello World", 5)).toBe("Hello");
+  });
+});
+
+describe("formatExpiry", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2025-06-15T12:00:00Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("returns empty string for undefined", () => {
+    expect(formatExpiry(undefined)).toBe('');
+  });
+
+  it("returns CLOSED for past dates", () => {
+    expect(formatExpiry('2025-06-14T12:00:00Z')).toBe('CLOSED');
+    expect(formatExpiry('2020-01-01T00:00:00Z')).toBe('CLOSED');
+  });
+
+  it("formats minutes", () => {
+    expect(formatExpiry('2025-06-15T12:30:00Z')).toBe('30m');
+    expect(formatExpiry('2025-06-15T12:45:00Z')).toBe('45m');
+  });
+
+  it("formats hours and minutes", () => {
+    expect(formatExpiry('2025-06-15T15:30:00Z')).toBe('3h 30m');
+    expect(formatExpiry('2025-06-15T20:00:00Z')).toBe('8h 0m');
+  });
+
+  it("formats days and hours", () => {
+    expect(formatExpiry('2025-06-17T12:00:00Z')).toBe('2d 0h');
+    expect(formatExpiry('2025-06-20T18:00:00Z')).toBe('5d 6h');
+  });
+
+  it("formats just days for >30 days", () => {
+    expect(formatExpiry('2025-08-15T12:00:00Z')).toBe('61d');
+    expect(formatExpiry('2025-10-15T12:00:00Z')).toBe('122d');
+  });
+
+  it("formats years and months", () => {
+    expect(formatExpiry('2026-06-15T12:00:00Z')).toBe('1y');
+    expect(formatExpiry('2027-09-15T12:00:00Z')).toBe('2y 3mo');
+  });
+
+  it("returns distant for >10 years", () => {
+    expect(formatExpiry('2036-06-15T12:00:00Z')).toBe('distant');
+    expect(formatExpiry('2099-01-01T00:00:00Z')).toBe('distant');
+  });
+});
+
+describe("calculateSpread", () => {
+  it("calculates spread correctly", () => {
+    expect(calculateSpread(48, 52)).toBe(4);
+    expect(calculateSpread(45, 55)).toBe(10);
+    expect(calculateSpread(50, 51)).toBe(1);
+  });
+
+  it("returns null for null bid", () => {
+    expect(calculateSpread(null, 52)).toBeNull();
+  });
+
+  it("returns null for null ask", () => {
+    expect(calculateSpread(48, null)).toBeNull();
+  });
+
+  it("returns null for undefined values", () => {
+    expect(calculateSpread(undefined, 52)).toBeNull();
+    expect(calculateSpread(48, undefined)).toBeNull();
+    expect(calculateSpread(undefined, undefined)).toBeNull();
+  });
+
+  it("handles zero spread", () => {
+    expect(calculateSpread(50, 50)).toBe(0);
+  });
+
+  it("handles negative spread (crossed market)", () => {
+    expect(calculateSpread(52, 48)).toBe(-4);
   });
 });
 

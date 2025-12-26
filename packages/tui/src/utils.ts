@@ -1,51 +1,21 @@
 /**
  * TUI Utility Functions
- * Formatting and display helpers
+ * 
+ * Re-exports common utilities from core and provides TUI-specific helpers.
  */
 
-/**
- * Format close time as relative time (e.g., "2d 14h", "3h 45m", "45m")
- * For distant dates (>365 days), shows years or "distant"
- */
-export function formatExpiry(closeTime?: string): string {
-  if (!closeTime) return '';
-  
-  const now = new Date();
-  const close = new Date(closeTime);
-  const diffMs = close.getTime() - now.getTime();
-  
-  if (diffMs <= 0) return 'CLOSED';
-  
-  const diffMins = Math.floor(diffMs / (1000 * 60));
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  const diffYears = Math.floor(diffDays / 365);
-  
-  // For very distant dates, show years or "distant"
-  if (diffYears > 10) {
-    return 'distant';
-  }
-  if (diffYears >= 1) {
-    const remainingMonths = Math.floor((diffDays % 365) / 30);
-    return remainingMonths > 0 ? `${diffYears}y ${remainingMonths}mo` : `${diffYears}y`;
-  }
-  // For dates > 30 days, show just days
-  if (diffDays > 30) {
-    return `${diffDays}d`;
-  }
-  if (diffDays > 0) {
-    const remainingHours = diffHours % 24;
-    return `${diffDays}d ${remainingHours}h`;
-  }
-  if (diffHours > 0) {
-    const remainingMins = diffMins % 60;
-    return `${diffHours}h ${remainingMins}m`;
-  }
-  return `${diffMins}m`;
-}
+// Re-export from core for convenience
+export {
+  formatExpiry,
+  calculateSpread,
+  formatCompactNumber,
+} from '@newyorkcompute/kalshi-core';
 
 /**
- * Get price change indicator and color
+ * Get price change indicator and color (TUI-specific)
+ * 
+ * Returns an object with text (▲/▼/━) and color (green/red/gray)
+ * for displaying price movement in the terminal.
  */
 export function getPriceChange(current?: number, previous?: number): { text: string; color: string } {
   if (current === undefined || previous === undefined || current === previous) {
@@ -60,7 +30,10 @@ export function getPriceChange(current?: number, previous?: number): { text: str
 }
 
 /**
- * Format volume with K/M suffix
+ * Format volume with K/M suffix (alias for formatCompactNumber)
+ * 
+ * @param volume - Volume number
+ * @returns Formatted string (e.g., "1.5K", "2.3M")
  */
 export function formatVolume(volume?: number): string {
   if (!volume) return '';
@@ -70,7 +43,10 @@ export function formatVolume(volume?: number): string {
 }
 
 /**
- * Format price in cents
+ * Format price in cents (simple version for TUI)
+ * 
+ * @param cents - Price in cents
+ * @returns Formatted string (e.g., "45¢", "—")
  */
 export function formatPrice(cents?: number): string {
   return cents !== undefined ? `${cents}¢` : '—';
@@ -78,16 +54,10 @@ export function formatPrice(cents?: number): string {
 
 /**
  * Format price with decimals
+ * 
+ * @param cents - Price in cents
+ * @returns Formatted string with 2 decimal places (e.g., "45.00¢")
  */
 export function formatPriceDecimal(cents: number): string {
   return `${cents.toFixed(2)}¢`;
 }
-
-/**
- * Calculate spread from best bid and ask
- */
-export function calculateSpread(bestBid: number | null, bestAsk: number | null): number | null {
-  if (bestBid === null || bestAsk === null) return null;
-  return bestAsk - bestBid;
-}
-
