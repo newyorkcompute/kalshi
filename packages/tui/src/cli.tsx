@@ -1,22 +1,23 @@
 #!/usr/bin/env node
 /**
- * Kalshi TUI - Vanilla Terminal Dashboard
- * No React, no Ink - just pure terminal control
+ * Kalshi TUI - Terminal Trading Dashboard
+ * Built with Ink for buttery-smooth rendering
  * 
  * Built by New York Compute
  */
 
-import { startApp } from './app.js';
+import { render } from 'ink';
+import { App } from './App.js';
 
-// Handle --help
+// Handle --help and --version flags
 const args = process.argv.slice(2);
 
 if (args.includes('--help') || args.includes('-h')) {
   console.log(`
-  Kalshi TUI - Terminal Trading Dashboard (Vanilla)
+  Kalshi TUI - Terminal Trading Dashboard
 
   Usage:
-    kalshi-tui-vanilla [options]
+    kalshi-tui [options]
 
   Options:
     --help, -h       Show this help message
@@ -41,9 +42,24 @@ if (args.includes('--version') || args.includes('-v')) {
   process.exit(0);
 }
 
-// Start the app
-startApp().catch((err) => {
-  console.error('Fatal error:', err);
+// Check if stdin supports raw mode (required for keyboard input)
+const isRawModeSupported = process.stdin.isTTY;
+
+if (!isRawModeSupported) {
+  console.error(`
+  Error: Kalshi TUI requires an interactive terminal.
+
+  This usually happens when running through a task runner or piped input.
+  
+  Try running directly:
+    node dist/cli.js
+  
+  Or:
+    npx @newyorkcompute/kalshi-tui
+`);
   process.exit(1);
-});
+}
+
+// Render the app
+render(<App />);
 

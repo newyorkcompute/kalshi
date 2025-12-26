@@ -93,6 +93,41 @@ kalshi-tui
 3. Generate a new API key (you'll create an RSA key pair)
 4. Save your API Key ID and private key securely
 
+## Development
+
+```bash
+# Install dependencies
+npm install
+
+# Build the TUI
+npx nx run @newyorkcompute/kalshi-tui:build
+
+# Run the TUI (loads .env.local)
+npx dotenv -e .env.local -- node packages/tui/dist/cli.js
+```
+
+### Watch Mode
+
+For active development, run the build in watch mode in one terminal:
+
+```bash
+# Terminal 1: Watch for changes
+npx nx run @newyorkcompute/kalshi-tui:dev
+```
+
+Then run the TUI in another terminal:
+
+```bash
+# Terminal 2: Run the app (re-run after changes compile)
+npx dotenv -e .env.local -- node packages/tui/dist/cli.js
+```
+
+### Tech Stack
+
+- **[Ink](https://github.com/vadimdemedes/ink)** - React for the terminal
+- **[@inkjs/ui](https://github.com/vadimdemedes/ink-ui)** - Polished UI components
+- **React 18** - Declarative UI with hooks
+
 ## Built By
 
 **New York Compute** — Command-native tools for quantitative research, execution, and market intelligence.
