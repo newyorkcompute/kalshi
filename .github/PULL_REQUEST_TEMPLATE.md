@@ -27,12 +27,24 @@
 - [ ] Build succeeds (`npm run build`)
 - [ ] Manual testing (describe below)
 
+## Changeset
+
+<!-- 
+If this PR changes any published packages, you need to add a changeset:
+  npx changeset
+
+This will prompt you to select packages and describe the change.
+For docs-only or CI changes, add the `skip-changeset` label to bypass this check.
+-->
+
+- [ ] I have added a changeset (`npx changeset`) OR this PR doesn't affect published packages
+- [ ] If no changeset needed, I have added the `skip-changeset` label
+
 ## Checklist
 
 - [ ] My code follows the project's style guidelines
 - [ ] I have added tests for new functionality
 - [ ] I have updated documentation as needed
-- [ ] I have added a changeset if this affects published packages
 
 ## Related Issues
 
