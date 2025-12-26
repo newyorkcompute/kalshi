@@ -168,12 +168,6 @@ export function PriceChart({ ticker, priceHistory, height, width }: PriceChartPr
         </Box>
       )}
 
-      {/* Help */}
-      <Box paddingX={1}>
-        <Text color="gray" dimColor>
-          [c] Toggle chart
-        </Text>
-      </Box>
     </Box>
   );
 }

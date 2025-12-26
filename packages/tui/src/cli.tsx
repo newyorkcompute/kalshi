@@ -30,7 +30,6 @@ if (args.includes('--help') || args.includes('-h')) {
 
   Controls:
     ↑/↓      Navigate markets
-    c        Toggle price chart
     q        Quit
 
   Built by New York Compute
