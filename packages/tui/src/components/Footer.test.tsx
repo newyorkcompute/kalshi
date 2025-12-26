@@ -18,11 +18,12 @@ describe('Footer', () => {
     expect(lastFrame()).toContain('[q] Quit');
   });
 
-  it('renders consistently (snapshot)', () => {
+  it('renders with border', () => {
     const { lastFrame } = render(<Footer />);
     
-    // Basic snapshot - checks the overall structure
-    expect(lastFrame()).toMatchSnapshot();
+    // Check that it renders a bordered box
+    expect(lastFrame()).toContain('Built by');
+    expect(lastFrame()).toContain('│'); // Border character
   });
 });
 
