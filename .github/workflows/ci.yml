@@ -109,8 +109,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Test
-        run: npm run test
+      - name: Test with Coverage
+        run: npm run test:coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./packages/core/coverage/coverage-final.json,./packages/mcp/coverage/coverage-final.json,./packages/tui/coverage/coverage-final.json
+          flags: unittests
+          fail_ci_if_error: false
+          verbose: true
 
   build:
     name: Build
