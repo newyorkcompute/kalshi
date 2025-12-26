@@ -44,3 +44,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Enable auto-merge on Version Packages PR
+      - name: Enable auto-merge for Version PR
+        if: steps.changesets.outputs.pullRequestNumber
+        run: gh pr merge ${{ steps.changesets.outputs.pullRequestNumber }} --auto --squash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
