@@ -75,6 +75,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Cache NX task results for faster subsequent runs
+      - name: Cache NX
+        uses: actions/cache@v4
+        with:
+          path: .nx/cache
+          key: nx-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          restore-keys: |
+            nx-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+            nx-${{ runner.os }}-
+
       # Set NX_BASE for affected commands
       - name: Derive SHAs for nx affected
         id: set-shas
