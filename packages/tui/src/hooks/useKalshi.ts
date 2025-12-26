@@ -14,6 +14,7 @@ import {
   type OrderbookDisplay,
 } from '@newyorkcompute/kalshi-core';
 import type { MarketApi, PortfolioApi, Market, MarketPosition, Trade } from 'kalshi-typescript';
+import { getCached, setCache, CACHE_TTL } from '../cache.js';
 
 // Constants
 const DEFAULT_TIMEOUT = 30000; // 30 seconds
@@ -252,9 +253,17 @@ export function useKalshi(): UseKalshiReturn {
     }
   }, [handleSuccess, handleFailure]);
 
-  // Fetch price history for a market
+  // Fetch price history for a market (with caching)
   const fetchPriceHistory = useCallback(async (ticker: string, hours: number = 24) => {
     if (!marketApiRef.current || circuitBreakerOpenRef.current) return;
+
+    // Check cache first
+    const cacheKey = `price_history:${ticker}:${hours}`;
+    const cached = getCached<TradePoint[]>(cacheKey, CACHE_TTL.PRICE_HISTORY);
+    if (cached) {
+      setPriceHistory(cached);
+      return;
+    }
 
     try {
       const now = Math.floor(Date.now() / 1000);
@@ -281,6 +290,9 @@ export function useKalshi(): UseKalshiReturn {
         volume: t.count || 0,
       })).sort((a, b) => a.timestamp - b.timestamp);
 
+      // Cache the result
+      setCache(cacheKey, points);
+      
       setPriceHistory(points);
       handleSuccess();
     } catch (err) {
