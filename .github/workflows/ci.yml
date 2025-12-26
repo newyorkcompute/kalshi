@@ -17,22 +17,40 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
+      - name: Check for skip-changeset label
+        id: check-label
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Fetch current labels from API (not stale event payload)
+          LABELS=$(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels --jq '.[].name')
+          if echo "$LABELS" | grep -q "skip-changeset"; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "✅ skip-changeset label found, skipping check"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "📋 No skip-changeset label, will run check"
+          fi
+
       - name: Checkout
+        if: steps.check-label.outputs.skip != 'true'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
+        if: steps.check-label.outputs.skip != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
 
       - name: Install dependencies
+        if: steps.check-label.outputs.skip != 'true'
         run: npm ci
 
       - name: Check for changeset
-        if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip-changeset') }}
+        if: steps.check-label.outputs.skip != 'true'
         run: |
           echo "Checking for changeset..."
           npx changeset status --since=origin/main

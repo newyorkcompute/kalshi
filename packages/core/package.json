@@ -39,15 +39,17 @@
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "kalshi-typescript": "^3.3.0"
   },
   "devDependencies": {
-    "@types/node": "^22.15.29",
-    "eslint": "^9.28.0",
     "@eslint/js": "^9.28.0",
+    "@types/node": "^22.15.29",
+    "@vitest/coverage-v8": "^3.2.4",
+    "eslint": "^9.28.0",
     "typescript-eslint": "^8.33.1",
     "vitest": "^3.2.3"
   }
