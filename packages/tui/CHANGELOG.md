@@ -1,5 +1,19 @@
 # @newyorkcompute/kalshi-tui
 
+## 0.3.1
+
+### Patch Changes
+
+- [#35](https://github.com/newyorkcompute/kalshi/pull/35) [`617152b`](https://github.com/newyorkcompute/kalshi/commit/617152b1c0176c2b1e183d7e3218398e896f50ff) Thanks [@siddharthkul](https://github.com/siddharthkul)! - Enhanced orderbook with more trading data:
+  - Increase price levels from 5 to 8 for better depth visibility
+  - Add mid price display in header
+  - Add total depth (ask qty / bid qty) summary
+  - Add imbalance ratio with sentiment indicator (buyers/sellers/neutral)
+  - Add dollar value at each price level
+  - Highlight best bid/ask with arrows (BID▸/ASK▸)
+  - Improved bar visualization with background
+  - Better price formatting for small values (<1¢)
+
 ## 0.3.0
 
 ### Minor Changes
