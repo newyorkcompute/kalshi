@@ -15,6 +15,7 @@ jobs:
   changeset:
     name: Changeset Check
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: github.event_name == 'pull_request'
     steps:
       - name: Check for skip-changeset label
@@ -36,6 +37,7 @@ jobs:
         if: steps.check-label.outputs.skip != 'true'
         uses: actions/checkout@v4
         with:
+          # Only need enough history to compare against main
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -59,6 +61,10 @@ jobs:
   ci:
     name: CI
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Determine if we should use affected (PRs) or run-many (main)
+      IS_PR: ${{ github.event_name == 'pull_request' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -80,9 +86,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .nx/cache
-          key: nx-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          # Use lock file hash (stable) instead of commit SHA (unique per commit)
+          key: nx-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
           restore-keys: |
-            nx-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
             nx-${{ runner.os }}-
 
       # Set NX_BASE for affected commands
@@ -90,11 +96,9 @@ jobs:
         id: set-shas
         uses: nrwl/nx-set-shas@v4
 
-      # For PRs: use nx affected (faster)
-      # For main: use nx run-many (complete coverage)
       - name: Typecheck
         run: |
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
+          if [ "$IS_PR" == "true" ]; then
             echo "🔍 Running typecheck on affected projects..."
             npx nx affected -t typecheck --base=${{ steps.set-shas.outputs.base }} --head=${{ steps.set-shas.outputs.head }}
           else
@@ -104,7 +108,7 @@ jobs:
 
       - name: Lint
         run: |
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
+          if [ "$IS_PR" == "true" ]; then
             echo "🔍 Running lint on affected projects..."
             npx nx affected -t lint --base=${{ steps.set-shas.outputs.base }} --head=${{ steps.set-shas.outputs.head }}
           else
@@ -114,7 +118,7 @@ jobs:
 
       - name: Test with Coverage
         run: |
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
+          if [ "$IS_PR" == "true" ]; then
             echo "🧪 Running tests on affected projects..."
             npx nx affected -t test:coverage --base=${{ steps.set-shas.outputs.base }} --head=${{ steps.set-shas.outputs.head }}
           else
@@ -126,14 +130,15 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./packages/core/coverage/coverage-final.json,./packages/mcp/coverage/coverage-final.json,./packages/tui/coverage/coverage-final.json
+          # Use directory instead of explicit files - handles missing coverage gracefully
+          directory: ./packages
           flags: unittests
           fail_ci_if_error: false
           verbose: true
 
       - name: Build
         run: |
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
+          if [ "$IS_PR" == "true" ]; then
             echo "🏗️ Building affected projects..."
             npx nx affected -t build --base=${{ steps.set-shas.outputs.base }} --head=${{ steps.set-shas.outputs.head }}
           else
