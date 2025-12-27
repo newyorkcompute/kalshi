@@ -1,5 +1,18 @@
 # @newyorkcompute/kalshi-tui
 
+## 0.3.4
+
+### Patch Changes
+
+- [#49](https://github.com/newyorkcompute/kalshi/pull/49) [`4342fed`](https://github.com/newyorkcompute/kalshi/commit/4342feddc7f14c840f043638b365592201abd30d) Thanks [@siddharthkul](https://github.com/siddharthkul)! - Add loading indicators and offline detection
+
+  - Add animated Spinner component with braille frames
+  - Show spinner during initial data loading
+  - Show refresh indicator (↻) when updating in background
+  - Detect network errors and show offline status (⊘)
+  - Display last update timestamp ("30s ago")
+  - Auto-retry when connection is restored
+
 ## 0.3.3
 
 ### Patch Changes
