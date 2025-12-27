@@ -18,8 +18,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsx watch src/main.ts",
-    "start": "node dist/main.js",
+    "dev": "dotenv -e ../../.env.local -- tsx watch src/main.ts",
+    "start": "dotenv -e ../../.env.local -- node dist/main.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
