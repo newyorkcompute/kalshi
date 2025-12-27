@@ -1,5 +1,19 @@
 # @newyorkcompute/kalshi-tui
 
+## 0.4.0
+
+### Minor Changes
+
+- [#51](https://github.com/newyorkcompute/kalshi/pull/51) [`fc208e5`](https://github.com/newyorkcompute/kalshi/commit/fc208e5b6318773c0c77ad3d9dba19b272f46e2f) Thanks [@siddharthkul](https://github.com/siddharthkul)! - Add Arbitrage Scanner panel to TUI
+
+  - New `Arbitrage` component displays real-time arbitrage opportunities
+  - Single-market arbitrage: detects when YES + NO ask prices < 100¢ (guaranteed profit)
+  - Event arbitrage: detects when sum of all YES prices in multi-outcome events < 100¢
+  - Integrated into left column layout: Markets → Arbitrage → Positions
+  - Opportunities sorted by profit potential, color-coded by value
+  - Added `event_ticker` to market data for event grouping
+  - 11 new unit tests for Arbitrage component
+
 ## 0.3.4
 
 ### Patch Changes
