@@ -73,6 +73,8 @@ interface UseKalshiReturn {
   wsState: ConnectionState;
   /** Whether real-time updates are active */
   isRealtime: boolean;
+  /** Initialize WebSocket connection for real-time updates */
+  initWebSocket: (apiKeyId: string, privateKey: string) => Promise<void>;
 }
 
 /**
@@ -594,5 +596,6 @@ export function useKalshi(): UseKalshiReturn {
     arbitrage,
     wsState,
     isRealtime,
+    initWebSocket,
   };
 }
