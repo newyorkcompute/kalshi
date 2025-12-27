@@ -5,9 +5,20 @@
 
 ## Overview
 
-A local-first market making / liquidity provider system for Kalshi prediction markets.
+A local-first market making / liquidity provider **daemon** for Kalshi prediction markets.
 
 **Inspiration**: [greed.bot](https://greed.bot/) - "Kalshi liquidity spamming operation"
+
+### Key Insight: Daemon vs Web Server
+
+> The market maker should **NOT** be "an HTTP server that does market making."  
+> It should be a **daemon** (background process) that:
+> 1. Connects to Kalshi WebSockets (real-time data)
+> 2. Computes quotes (strategy logic)
+> 3. Places/cancels orders via REST
+> 4. *Optionally* exposes a tiny HTTP API for control
+
+The **quoting loop is the core process**. Hono is just a "control plane" for monitoring/control.
 
 ---
 
@@ -37,26 +48,63 @@ kalshi/
 │               └── index.ts           # Exports
 │
 └── apps/
-    └── mm/                            ← NEW: MM service
+    └── mm/                            ← NEW: MM daemon
         ├── src/
-        │   ├── server.ts              # Hono app entry
-        │   ├── routes/
-        │   │   ├── health.ts          # Health check
-        │   │   ├── status.ts          # Current state
-        │   │   ├── orders.ts          # Order management
-        │   │   └── control.ts         # Start/stop/params
-        │   ├── strategies/
+        │   ├── main.ts                # Entry point (starts daemon)
+        │   │
+        │   ├── daemon/                # CORE: The quoting bot
+        │   │   ├── bot.ts             # Main daemon class
+        │   │   ├── runner.ts          # Quoting loop
+        │   │   ├── state.ts           # Global state
+        │   │   └── metrics.ts         # PnL, fills, etc.
+        │   │
+        │   ├── strategies/            # Quote generation
         │   │   ├── base.ts            # Strategy interface
         │   │   ├── symmetric.ts       # Simple quoting
         │   │   └── avellaneda.ts      # Avellaneda-Stoikov
-        │   ├── engine/
-        │   │   ├── runner.ts          # Main loop
-        │   │   ├── state.ts           # Global state
-        │   │   └── metrics.ts         # PnL, fills, etc.
+        │   │
+        │   ├── api/                   # OPTIONAL: Control plane (Hono)
+        │   │   ├── server.ts          # Hono app
+        │   │   └── routes/
+        │   │       ├── health.ts      # GET /health
+        │   │       ├── metrics.ts     # GET /metrics
+        │   │       ├── state.ts       # GET /state (positions, orders)
+        │   │       └── control.ts     # POST /pause, /resume, /flatten
+        │   │
         │   └── config.ts              # Config loader
         ├── config.yaml                # Strategy config
         ├── package.json
         └── tsconfig.json
+```
+
+### Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        MM DAEMON                            │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌─────────────┐    ┌──────────────┐    ┌──────────────┐   │
+│  │  WebSocket  │───▶│   Quoting    │───▶│    REST      │   │
+│  │  (realtime) │    │    Loop      │    │  (orders)    │   │
+│  └─────────────┘    └──────────────┘    └──────────────┘   │
+│         │                  │                               │
+│         ▼                  ▼                               │
+│  ┌─────────────┐    ┌──────────────┐                       │
+│  │  Orderbook  │    │   Strategy   │                       │
+│  │   State     │    │   Engine     │                       │
+│  └─────────────┘    └──────────────┘                       │
+│                            │                               │
+│                            ▼                               │
+│                     ┌──────────────┐                       │
+│                     │    Risk      │                       │
+│                     │   Manager    │                       │
+│                     └──────────────┘                       │
+│                                                             │
+├─────────────────────────────────────────────────────────────┤
+│  OPTIONAL: Hono Control Plane (HTTP API)                   │
+│  /health  /metrics  /state  /pause  /resume  /flatten      │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -184,55 +232,154 @@ export class RiskManager {
 
 ---
 
-## MM Service (`apps/mm/`)
+## MM Daemon (`apps/mm/`)
 
-### Hono Server
+### Entry Point
 
 ```typescript
-// src/server.ts
-import { Hono } from 'hono';
-import { cors } from 'hono/cors';
-import { logger } from 'hono/logger';
-import { healthRoutes } from './routes/health';
-import { statusRoutes } from './routes/status';
-import { controlRoutes } from './routes/control';
-import { Engine } from './engine/runner';
+// src/main.ts
+import { Bot } from './daemon/bot';
+import { loadConfig } from './config';
+import { createControlPlane } from './api/server';
 
-const app = new Hono();
+async function main() {
+  const config = loadConfig();
+  
+  // 1. Create the bot (CORE)
+  const bot = new Bot(config);
+  
+  // 2. Start optional control plane (HTTP API)
+  if (config.api.enabled) {
+    const api = createControlPlane(bot, config.api.port);
+    api.start();
+    console.log(`Control plane: http://localhost:${config.api.port}`);
+  }
+  
+  // 3. Start the quoting loop
+  await bot.start();
+}
 
-// Middleware
-app.use('*', logger());
-app.use('*', cors());
-
-// Routes
-app.route('/health', healthRoutes);
-app.route('/status', statusRoutes);
-app.route('/control', controlRoutes);
-
-// Start engine
-const engine = new Engine();
-
-export default {
-  port: process.env.MM_PORT || 3001,
-  fetch: app.fetch,
-  engine,
-};
+main().catch(console.error);
 ```
 
-### API Endpoints
+### Bot Class (Core Daemon)
+
+```typescript
+// src/daemon/bot.ts
+import { KalshiWsClient } from '@newyorkcompute/kalshi-core';
+import { OrderManager, InventoryTracker, RiskManager } from '@newyorkcompute/kalshi-core/mm';
+
+export class Bot {
+  private running = false;
+  private ws: KalshiWsClient;
+  private orderManager: OrderManager;
+  private inventory: InventoryTracker;
+  private risk: RiskManager;
+  private strategy: Strategy;
+
+  constructor(config: Config) {
+    this.ws = new KalshiWsClient(config.kalshi);
+    this.orderManager = new OrderManager(config.kalshi);
+    this.inventory = new InventoryTracker();
+    this.risk = new RiskManager(config.risk);
+    this.strategy = createStrategy(config.strategy);
+  }
+
+  async start(): Promise<void> {
+    this.running = true;
+    
+    // Connect to WebSocket
+    await this.ws.connect();
+    this.ws.subscribe(this.config.markets);
+    
+    // Register handlers
+    this.ws.on('ticker', (data) => this.onTick(data));
+    this.ws.on('fill', (fill) => this.onFill(fill));
+    
+    console.log('Bot started');
+    
+    // Keep alive
+    while (this.running) {
+      await this.sleep(1000);
+    }
+  }
+
+  private async onTick(data: MarketData): Promise<void> {
+    if (this.risk.shouldHalt()) return;
+    
+    // Generate quotes from strategy
+    const quotes = this.strategy.onTick(data, this.inventory);
+    
+    // Risk check and place orders
+    for (const quote of quotes) {
+      const check = this.risk.checkOrder(quote, this.inventory);
+      if (check.allowed) {
+        await this.orderManager.updateQuote(quote);
+      }
+    }
+  }
+
+  async stop(): Promise<void> {
+    this.running = false;
+    await this.orderManager.cancelAll();
+    this.ws.disconnect();
+    console.log('Bot stopped');
+  }
+
+  // Control plane methods
+  pause(): void { this.running = false; }
+  resume(): void { this.running = true; }
+  async flatten(): Promise<void> { await this.orderManager.cancelAll(); }
+  getState(): BotState { /* ... */ }
+}
+```
+
+### Control Plane (Optional Hono API)
+
+```typescript
+// src/api/server.ts
+import { Hono } from 'hono';
+import type { Bot } from '../daemon/bot';
+
+export function createControlPlane(bot: Bot, port: number) {
+  const app = new Hono();
+
+  // Health check
+  app.get('/health', (c) => c.json({ status: 'ok' }));
+
+  // Metrics (PnL, fill rate, etc.)
+  app.get('/metrics', (c) => c.json(bot.getMetrics()));
+
+  // Current state (positions, active orders)
+  app.get('/state', (c) => c.json(bot.getState()));
+
+  // Control endpoints
+  app.post('/pause', (c) => { bot.pause(); return c.json({ paused: true }); });
+  app.post('/resume', (c) => { bot.resume(); return c.json({ paused: false }); });
+  app.post('/flatten', async (c) => { await bot.flatten(); return c.json({ flattened: true }); });
+
+  return {
+    start: () => {
+      console.log(`Control plane listening on :${port}`);
+      // Hono serve logic
+    },
+    app,
+  };
+}
+```
+
+### API Endpoints (Control Plane)
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | Liveness check |
-| `GET` | `/status` | Current state (positions, orders, PnL) |
-| `GET` | `/status/orders` | Active orders |
-| `GET` | `/status/positions` | Current positions |
-| `GET` | `/status/pnl` | PnL summary |
-| `POST` | `/control/start` | Start market making |
-| `POST` | `/control/stop` | Stop (cancel all orders) |
-| `POST` | `/control/halt` | Emergency halt |
-| `POST` | `/control/params` | Update strategy params |
-| `GET` | `/control/config` | Current config |
+| `GET` | `/metrics` | PnL, fill rate, uptime |
+| `GET` | `/state` | Positions, active orders, inventory |
+| `POST` | `/pause` | Pause quoting (keep positions) |
+| `POST` | `/resume` | Resume quoting |
+| `POST` | `/flatten` | Cancel all orders, close positions |
+
+> **Note**: The bot starts automatically on launch. These endpoints are for monitoring and emergency control.
 
 ### Strategy Interface
 
@@ -373,15 +520,19 @@ export class AvellanedaStoikov implements Strategy {
 
 ```yaml
 # apps/mm/config.yaml
-# Market Maker Configuration
+# Market Maker Daemon Configuration
 
-server:
+# Optional HTTP control plane
+api:
+  enabled: true
   port: 3001
   
+# Kalshi credentials (uses env vars)
 kalshi:
-  # Uses env vars: KALSHI_API_KEY, KALSHI_PRIVATE_KEY
+  # KALSHI_API_KEY and KALSHI_PRIVATE_KEY from environment
   demo: false  # true for demo-api.kalshi.co
 
+# Strategy selection
 strategy:
   name: symmetric  # or 'avellaneda'
   
@@ -397,11 +548,13 @@ strategy:
     sigma: 0.15           # Volatility
     maxPosition: 100      # Max inventory
 
+# Markets to quote
 markets:
   - PRES-2028-DEM
   - PRES-2028-GOP
   # Can use patterns later: PRES-2028-*
 
+# Risk limits (IMPORTANT!)
 risk:
   maxPositionPerMarket: 200    # contracts
   maxTotalExposure: 1000       # total contracts
@@ -409,75 +562,85 @@ risk:
   maxOrderSize: 50             # per order
   minSpread: 2                 # cents
 
-engine:
-  tickIntervalMs: 1000         # Quote refresh rate
-  staleOrderMs: 30000          # Cancel orders older than
-  useWebsocket: true           # Use WS for real-time data
+# Daemon settings
+daemon:
+  staleOrderMs: 30000          # Cancel orders older than 30s
+  reconnectDelayMs: 5000       # WebSocket reconnect delay
 ```
 
 ---
 
-## Main Loop (Engine)
+## Event-Driven Quoting (Not Polling)
+
+The daemon is **event-driven**, not a polling loop. It reacts to WebSocket events:
 
 ```typescript
-// src/engine/runner.ts
-import { KalshiWsClient } from '@newyorkcompute/kalshi-core';
+// src/daemon/runner.ts
+export class QuotingEngine {
+  private bot: Bot;
 
-export class Engine {
-  private running = false;
-  private strategy: Strategy;
-  private orderManager: OrderManager;
-  private inventory: InventoryTracker;
-  private risk: RiskManager;
-  private ws: KalshiWsClient;
+  constructor(bot: Bot) {
+    this.bot = bot;
+  }
 
-  async start(): Promise<void> {
-    this.running = true;
+  /** Called on each WebSocket ticker update */
+  async onTick(ticker: TickerMessage): Promise<void> {
+    if (!this.bot.isRunning()) return;
+    if (this.bot.risk.shouldHalt()) return;
+
+    const market = ticker.market_ticker;
     
-    // Connect WebSocket
-    await this.ws.connect();
+    // Get current state
+    const position = this.bot.inventory.getPosition(market);
+    const orderbook = this.bot.getOrderbook(market);
     
-    // Subscribe to markets
-    this.ws.subscribe(this.config.markets);
+    // Generate new quotes
+    const quotes = this.bot.strategy.computeQuotes({
+      market,
+      mid: (orderbook.bestBid + orderbook.bestAsk) / 2,
+      spread: orderbook.bestAsk - orderbook.bestBid,
+      inventory: position?.netExposure ?? 0,
+    });
     
-    // Main loop
-    while (this.running) {
-      // Check if halted
-      if (this.risk.shouldHalt()) {
-        await this.cancelAllOrders();
-        continue;
+    // Update orders (cancel stale, place new)
+    for (const quote of quotes) {
+      const check = this.bot.risk.checkOrder(quote, this.bot.inventory);
+      if (check.allowed) {
+        await this.bot.orderManager.updateQuote(market, quote);
       }
-      
-      // Get latest data
-      const marketData = this.ws.getLatestData();
-      
-      // Generate quotes
-      const quotes = this.strategy.onTick(marketData);
-      
-      // Risk check each quote
-      for (const quote of quotes) {
-        const check = this.risk.checkOrder(quote, this.inventory);
-        if (!check.allowed) {
-          console.log(`Quote rejected: ${check.reason}`);
-          continue;
-        }
-        
-        // Place/update orders
-        await this.updateQuotes(quote);
-      }
-      
-      // Refresh cycle
-      await this.sleep(this.config.tickIntervalMs);
     }
   }
 
-  async stop(): Promise<void> {
-    this.running = false;
-    await this.cancelAllOrders();
-    this.ws.disconnect();
+  /** Called when our order is filled */
+  async onFill(fill: FillMessage): Promise<void> {
+    // Update inventory
+    this.bot.inventory.onFill(fill);
+    
+    // Update risk PnL
+    this.bot.risk.onFill(fill);
+    
+    // Notify strategy (may want to adjust quotes)
+    this.bot.strategy.onFill(fill);
+    
+    // Log
+    console.log(`Fill: ${fill.side} ${fill.count}x ${fill.ticker} @ ${fill.price}¢`);
   }
 }
 ```
+
+### Why Event-Driven?
+
+| Polling Loop | Event-Driven |
+|--------------|--------------|
+| `while(true) { getMarketData(); computeQuotes(); sleep(); }` | `ws.on('ticker', onTick)` |
+| Wastes cycles when nothing changes | Only runs when data arrives |
+| Fixed latency (tick interval) | Minimal latency |
+| Simpler to reason about | More reactive |
+
+For market making, **event-driven is better** because:
+1. React instantly to price changes
+2. No wasted computation
+3. Lower latency to adjust quotes
 
 ---
 
