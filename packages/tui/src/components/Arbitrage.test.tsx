@@ -95,7 +95,7 @@ describe('Arbitrage', () => {
     );
     const frame = lastFrame();
     expect(frame).toContain('KXBTC');
-    expect(frame).toContain('47+51=98¢');
+    expect(frame).toContain('Y47+N51=98');
     expect(frame).toContain('+2.0¢');
   });
 
@@ -105,8 +105,8 @@ describe('Arbitrage', () => {
     );
     const frame = lastFrame();
     expect(frame).toContain('KXELECTION');
-    expect(frame).toContain('Σ=94¢');
-    expect(frame).toContain('+6.0¢');
+    expect(frame).toContain('Σ94¢');
+    expect(frame).toContain('+6¢'); // Shows as integer for profits >= 5
   });
 
   it('renders both types with separator', () => {
@@ -115,7 +115,7 @@ describe('Arbitrage', () => {
     );
     const frame = lastFrame();
     expect(frame).toContain('KXBTC');
-    expect(frame).toContain('events');
+    expect(frame).toContain('multi-outcome');
     expect(frame).toContain('KXELECTION');
   });
 
@@ -137,8 +137,8 @@ describe('Arbitrage', () => {
     const { lastFrame } = render(
       <Arbitrage opportunities={longTickerArbs} height={10} />
     );
-    // Should truncate to 20 chars
-    expect(lastFrame()).toContain('VERYLONGTICKERNAME12');
+    // Should truncate to 18 chars for single market
+    expect(lastFrame()).toContain('VERYLONGTICKERNAME');
   });
 
   it('uses yellow border when opportunities exist', () => {
@@ -154,6 +154,37 @@ describe('Arbitrage', () => {
       <Arbitrage opportunities={emptyOpportunities} height={10} />
     );
     expect(lastFrame()).toContain('○');
+  });
+
+  it('shows market count for event arbitrage', () => {
+    const { lastFrame } = render(
+      <Arbitrage opportunities={eventArbs} height={12} />
+    );
+    // Should show (4) for 4 markets in the event
+    expect(lastFrame()).toContain('(4)');
+  });
+
+  it('shows warning for suspiciously high profits', () => {
+    const suspiciousArbs: ArbitrageOpportunities = {
+      singleMarket: [],
+      events: [
+        {
+          eventTicker: 'SUSPICIOUS',
+          title: 'SUSPICIOUS',
+          markets: [
+            { ticker: 'A', yesAsk: 10 },
+            { ticker: 'B', yesAsk: 10 },
+          ],
+          total: 20, // Only 20¢ sum = 80¢ profit (suspicious!)
+          profit: 80,
+        },
+      ],
+    };
+    const { lastFrame } = render(
+      <Arbitrage opportunities={suspiciousArbs} height={10} />
+    );
+    // Should show warning indicator
+    expect(lastFrame()).toContain('⚠');
   });
 });
 

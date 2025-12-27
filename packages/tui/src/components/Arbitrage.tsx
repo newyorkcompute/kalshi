@@ -36,17 +36,20 @@ interface ArbitrageProps {
 }
 
 /**
- * Format profit with color
+ * Format profit with color and warning for suspicious values
+ * Very high profits (>20¢) are likely illiquid or incomplete events
  */
-function formatProfit(profit: number): { text: string; color: string } {
+function formatProfit(profit: number): { text: string; color: string; warning: boolean } {
+  const warning = profit > 20; // Suspiciously high profit
+  
   if (profit >= 5) {
-    return { text: `+${profit.toFixed(1)}¢`, color: 'green' };
+    return { text: `+${profit.toFixed(0)}¢`, color: 'green', warning };
   } else if (profit >= 2) {
-    return { text: `+${profit.toFixed(1)}¢`, color: 'yellow' };
+    return { text: `+${profit.toFixed(1)}¢`, color: 'yellow', warning };
   } else if (profit > 0) {
-    return { text: `+${profit.toFixed(1)}¢`, color: 'gray' };
+    return { text: `+${profit.toFixed(1)}¢`, color: 'gray', warning };
   }
-  return { text: '—', color: 'gray' };
+  return { text: '—', color: 'gray', warning: false };
 }
 
 export function Arbitrage({ opportunities, height, isLoading }: ArbitrageProps) {
@@ -84,17 +87,17 @@ export function Arbitrage({ opportunities, height, isLoading }: ArbitrageProps) 
           <Text color="gray">No arbitrage opportunities</Text>
         ) : (
           <>
-            {/* Single-market arbitrage */}
+            {/* Single-market arbitrage (YES + NO < 100) */}
             {singleMarket.slice(0, singleMarketRows).map((arb) => {
               const profit = formatProfit(arb.profit);
               return (
                 <Box key={arb.ticker} justifyContent="space-between">
                   <Text color="white">
-                    {arb.ticker.slice(0, 20)}
+                    {arb.ticker.slice(0, 18)}
                   </Text>
                   <Box>
                     <Text color="gray" dimColor>
-                      {arb.yesAsk}+{arb.noAsk}={arb.total}¢
+                      Y{arb.yesAsk}+N{arb.noAsk}={arb.total}
                     </Text>
                     <Text color={profit.color} bold> {profit.text}</Text>
                   </Box>
@@ -104,20 +107,25 @@ export function Arbitrage({ opportunities, height, isLoading }: ArbitrageProps) 
 
             {/* Separator if both types exist */}
             {singleMarket.length > 0 && events.length > 0 && eventRows > 0 && (
-              <Text color="gray" dimColor>─ events ─</Text>
+              <Text color="gray" dimColor>── multi-outcome ──</Text>
             )}
 
-            {/* Event arbitrage */}
+            {/* Event arbitrage (sum of all YES < 100) */}
             {events.slice(0, eventRows).map((arb) => {
               const profit = formatProfit(arb.profit);
+              const marketCount = arb.markets.length;
               return (
                 <Box key={arb.eventTicker} justifyContent="space-between">
-                  <Text color="cyan">
-                    {arb.eventTicker.slice(0, 15)}
-                  </Text>
+                  <Box>
+                    {profit.warning && <Text color="red">⚠ </Text>}
+                    <Text color="cyan">
+                      {arb.eventTicker.slice(0, 14)}
+                    </Text>
+                    <Text color="gray" dimColor> ({marketCount})</Text>
+                  </Box>
                   <Box>
                     <Text color="gray" dimColor>
-                      Σ={arb.total}¢
+                      Σ{arb.total}¢
                     </Text>
                     <Text color={profit.color} bold> {profit.text}</Text>
                   </Box>
