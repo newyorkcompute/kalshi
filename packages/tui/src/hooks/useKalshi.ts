@@ -15,6 +15,7 @@ import {
 } from '@newyorkcompute/kalshi-core';
 import type { MarketApi, PortfolioApi, Market, MarketPosition, Trade } from 'kalshi-typescript';
 import { getCached, setCache, CACHE_TTL } from '../cache.js';
+import { calculateArbitrage, type ArbitrageOpportunities } from '../utils.js';
 
 // Constants
 const DEFAULT_TIMEOUT = 30000; // 30 seconds
@@ -32,30 +33,6 @@ interface Position {
 interface MarketWithHistory extends MarketDisplay {
   previousYesBid?: number;
   event_ticker?: string;
-}
-
-/** Single-market arbitrage opportunity */
-interface SingleMarketArb {
-  ticker: string;
-  yesAsk: number;
-  noAsk: number;
-  total: number;
-  profit: number;
-}
-
-/** Multi-outcome event arbitrage opportunity */
-interface EventArb {
-  eventTicker: string;
-  title: string;
-  markets: { ticker: string; yesAsk: number }[];
-  total: number;
-  profit: number;
-}
-
-/** All arbitrage opportunities */
-interface ArbitrageOpportunities {
-  singleMarket: SingleMarketArb[];
-  events: EventArb[];
 }
 
 // Trade data for price history
@@ -118,75 +95,6 @@ function isNetworkError(error: unknown): boolean {
       msg.includes('internet');
   }
   return false;
-}
-
-/**
- * Calculate arbitrage opportunities from markets
- * Single-market: YES_ask + NO_ask < 100 (guaranteed profit)
- * Event: Sum of all YES_ask in mutually exclusive event < 100
- */
-function calculateArbitrage(markets: MarketWithHistory[]): ArbitrageOpportunities {
-  const singleMarket: SingleMarketArb[] = [];
-  const eventMap = new Map<string, { markets: MarketWithHistory[]; title: string }>();
-
-  for (const market of markets) {
-    const yesAsk = market.yes_ask;
-    const noAsk = market.no_ask;
-
-    // Single-market arbitrage: YES + NO < 100
-    if (yesAsk !== undefined && noAsk !== undefined) {
-      const total = yesAsk + noAsk;
-      if (total < 100) {
-        singleMarket.push({
-          ticker: market.ticker,
-          yesAsk,
-          noAsk,
-          total,
-          profit: 100 - total,
-        });
-      }
-    }
-
-    // Group by event for multi-outcome arbitrage
-    if (market.event_ticker && yesAsk !== undefined) {
-      const existing = eventMap.get(market.event_ticker);
-      if (existing) {
-        existing.markets.push(market);
-      } else {
-        eventMap.set(market.event_ticker, {
-          markets: [market],
-          title: market.event_ticker,
-        });
-      }
-    }
-  }
-
-  // Calculate event arbitrage (sum of YES < 100)
-  const events: EventArb[] = [];
-  for (const [eventTicker, data] of eventMap) {
-    // Only consider events with 2+ markets (multi-outcome)
-    if (data.markets.length >= 2) {
-      const total = data.markets.reduce((sum, m) => sum + (m.yes_ask || 0), 0);
-      if (total < 100) {
-        events.push({
-          eventTicker,
-          title: data.title,
-          markets: data.markets.map(m => ({
-            ticker: m.ticker,
-            yesAsk: m.yes_ask || 0,
-          })),
-          total,
-          profit: 100 - total,
-        });
-      }
-    }
-  }
-
-  // Sort by profit (highest first)
-  singleMarket.sort((a, b) => b.profit - a.profit);
-  events.sort((a, b) => b.profit - a.profit);
-
-  return { singleMarket, events };
 }
 
 export function useKalshi(): UseKalshiReturn {

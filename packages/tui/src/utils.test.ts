@@ -6,6 +6,8 @@ import {
   formatPrice,
   formatPriceDecimal,
   calculateSpread,
+  calculateArbitrage,
+  type ArbitrageMarket,
 } from './utils.js';
 
 describe('formatExpiry', () => {
@@ -141,6 +143,167 @@ describe('calculateSpread', () => {
 
   it('handles zero spread', () => {
     expect(calculateSpread(50, 50)).toBe(0);
+  });
+});
+
+describe('calculateArbitrage', () => {
+  describe('single-market arbitrage', () => {
+    it('detects when YES + NO < 100', () => {
+      const markets: ArbitrageMarket[] = [
+        { ticker: 'MARKET1', yes_ask: 47, no_ask: 51 }, // Total 98, profit 2
+      ];
+      const result = calculateArbitrage(markets);
+      
+      expect(result.singleMarket).toHaveLength(1);
+      expect(result.singleMarket[0]).toEqual({
+        ticker: 'MARKET1',
+        yesAsk: 47,
+        noAsk: 51,
+        total: 98,
+        profit: 2,
+      });
+    });
+
+    it('ignores markets where YES + NO >= 100', () => {
+      const markets: ArbitrageMarket[] = [
+        { ticker: 'MARKET1', yes_ask: 50, no_ask: 50 }, // Total 100, no arb
+        { ticker: 'MARKET2', yes_ask: 60, no_ask: 45 }, // Total 105, no arb
+      ];
+      const result = calculateArbitrage(markets);
+      
+      expect(result.singleMarket).toHaveLength(0);
+    });
+
+    it('ignores markets with missing prices', () => {
+      const markets: ArbitrageMarket[] = [
+        { ticker: 'MARKET1', yes_ask: 47 }, // no no_ask
+        { ticker: 'MARKET2', no_ask: 51 },  // no yes_ask
+        { ticker: 'MARKET3' },               // no prices
+      ];
+      const result = calculateArbitrage(markets);
+      
+      expect(result.singleMarket).toHaveLength(0);
+    });
+
+    it('sorts by profit descending', () => {
+      const markets: ArbitrageMarket[] = [
+        { ticker: 'SMALL', yes_ask: 49, no_ask: 50 },   // profit 1
+        { ticker: 'LARGE', yes_ask: 40, no_ask: 50 },   // profit 10
+        { ticker: 'MEDIUM', yes_ask: 45, no_ask: 50 },  // profit 5
+      ];
+      const result = calculateArbitrage(markets);
+      
+      expect(result.singleMarket).toHaveLength(3);
+      expect(result.singleMarket[0].ticker).toBe('LARGE');
+      expect(result.singleMarket[1].ticker).toBe('MEDIUM');
+      expect(result.singleMarket[2].ticker).toBe('SMALL');
+    });
+  });
+
+  describe('event arbitrage', () => {
+    it('detects when sum of YES prices in event < 100', () => {
+      const markets: ArbitrageMarket[] = [
+        { ticker: 'EVENT-A', yes_ask: 30, no_ask: 80, event_ticker: 'EVENT' },
+        { ticker: 'EVENT-B', yes_ask: 30, no_ask: 80, event_ticker: 'EVENT' },
+        { ticker: 'EVENT-C', yes_ask: 30, no_ask: 80, event_ticker: 'EVENT' },
+      ];
+      const result = calculateArbitrage(markets);
+      
+      expect(result.events).toHaveLength(1);
+      expect(result.events[0]).toMatchObject({
+        eventTicker: 'EVENT',
+        total: 90, // 30 + 30 + 30
+        profit: 10,
+      });
+      expect(result.events[0].markets).toHaveLength(3);
+    });
+
+    it('ignores events where sum >= 100', () => {
+      const markets: ArbitrageMarket[] = [
+        { ticker: 'EVENT-A', yes_ask: 50, no_ask: 60, event_ticker: 'EVENT' },
+        { ticker: 'EVENT-B', yes_ask: 50, no_ask: 60, event_ticker: 'EVENT' },
+      ];
+      const result = calculateArbitrage(markets);
+      
+      expect(result.events).toHaveLength(0);
+    });
+
+    it('requires at least 2 markets per event', () => {
+      const markets: ArbitrageMarket[] = [
+        { ticker: 'EVENT-A', yes_ask: 30, no_ask: 80, event_ticker: 'EVENT' },
+      ];
+      const result = calculateArbitrage(markets);
+      
+      expect(result.events).toHaveLength(0);
+    });
+
+    it('groups markets by event_ticker', () => {
+      const markets: ArbitrageMarket[] = [
+        { ticker: 'EVENT1-A', yes_ask: 30, event_ticker: 'EVENT1' },
+        { ticker: 'EVENT1-B', yes_ask: 30, event_ticker: 'EVENT1' },
+        { ticker: 'EVENT2-A', yes_ask: 20, event_ticker: 'EVENT2' },
+        { ticker: 'EVENT2-B', yes_ask: 20, event_ticker: 'EVENT2' },
+        { ticker: 'EVENT2-C', yes_ask: 20, event_ticker: 'EVENT2' },
+      ];
+      const result = calculateArbitrage(markets);
+      
+      expect(result.events).toHaveLength(2);
+      // EVENT2 should be first (40% profit vs 40% profit, but more markets)
+      const event1 = result.events.find(e => e.eventTicker === 'EVENT1');
+      const event2 = result.events.find(e => e.eventTicker === 'EVENT2');
+      
+      expect(event1?.markets).toHaveLength(2);
+      expect(event1?.total).toBe(60);
+      expect(event2?.markets).toHaveLength(3);
+      expect(event2?.total).toBe(60);
+    });
+
+    it('sorts events by profit descending', () => {
+      const markets: ArbitrageMarket[] = [
+        { ticker: 'SMALL-A', yes_ask: 45, event_ticker: 'SMALL' },
+        { ticker: 'SMALL-B', yes_ask: 45, event_ticker: 'SMALL' }, // 90 total, 10 profit
+        { ticker: 'LARGE-A', yes_ask: 20, event_ticker: 'LARGE' },
+        { ticker: 'LARGE-B', yes_ask: 20, event_ticker: 'LARGE' }, // 40 total, 60 profit
+      ];
+      const result = calculateArbitrage(markets);
+      
+      expect(result.events[0].eventTicker).toBe('LARGE');
+      expect(result.events[1].eventTicker).toBe('SMALL');
+    });
+  });
+
+  describe('combined scenarios', () => {
+    it('returns both single-market and event arbitrage', () => {
+      const markets: ArbitrageMarket[] = [
+        // Single-market arb
+        { ticker: 'SINGLE', yes_ask: 47, no_ask: 51 },
+        // Event arb
+        { ticker: 'EVENT-A', yes_ask: 30, event_ticker: 'EVENT' },
+        { ticker: 'EVENT-B', yes_ask: 30, event_ticker: 'EVENT' },
+      ];
+      const result = calculateArbitrage(markets);
+      
+      expect(result.singleMarket).toHaveLength(1);
+      expect(result.events).toHaveLength(1);
+    });
+
+    it('returns empty arrays when no opportunities exist', () => {
+      const markets: ArbitrageMarket[] = [
+        { ticker: 'MARKET1', yes_ask: 50, no_ask: 55 },
+        { ticker: 'MARKET2', yes_ask: 60, no_ask: 45 },
+      ];
+      const result = calculateArbitrage(markets);
+      
+      expect(result.singleMarket).toHaveLength(0);
+      expect(result.events).toHaveLength(0);
+    });
+
+    it('handles empty markets array', () => {
+      const result = calculateArbitrage([]);
+      
+      expect(result.singleMarket).toHaveLength(0);
+      expect(result.events).toHaveLength(0);
+    });
   });
 });
 
