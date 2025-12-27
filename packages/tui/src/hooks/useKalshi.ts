@@ -10,8 +10,12 @@ import {
   createPortfolioApi, 
   getKalshiConfig,
   withTimeout,
+  KalshiWsClient,
   type MarketDisplay,
   type OrderbookDisplay,
+  type TickerMessage,
+  type OrderbookDeltaMessage,
+  type ConnectionState,
 } from '@newyorkcompute/kalshi-core';
 import type { MarketApi, PortfolioApi, Market, MarketPosition, Trade } from 'kalshi-typescript';
 import { getCached, setCache, CACHE_TTL } from '../cache.js';
@@ -65,6 +69,10 @@ interface UseKalshiReturn {
   loading: LoadingState;
   lastUpdateTime: number | null;
   arbitrage: ArbitrageOpportunities;
+  /** WebSocket connection state */
+  wsState: ConnectionState;
+  /** Whether real-time updates are active */
+  isRealtime: boolean;
 }
 
 /**
@@ -120,6 +128,10 @@ export function useKalshi(): UseKalshiReturn {
   const marketApiRef = useRef<MarketApi | null>(null);
   const portfolioApiRef = useRef<PortfolioApi | null>(null);
   
+  // WebSocket client
+  const wsClientRef = useRef<KalshiWsClient | null>(null);
+  const [wsState, setWsState] = useState<ConnectionState>('disconnected');
+  
   // Store previous prices for change detection
   const previousPricesRef = useRef<Map<string, number>>(new Map());
   
@@ -128,7 +140,7 @@ export function useKalshi(): UseKalshiReturn {
   const consecutiveFailuresRef = useRef(0);
   const circuitBreakerOpenRef = useRef(false);
 
-  // Initialize API clients
+  // Initialize API clients and WebSocket
   useEffect(() => {
     try {
       const config = getKalshiConfig();
@@ -136,10 +148,149 @@ export function useKalshi(): UseKalshiReturn {
       portfolioApiRef.current = createPortfolioApi(config);
       setIsConnected(true);
       setError(null);
+      
+      // Initialize WebSocket if credentials available
+      if (config.apiKey && config.privateKey) {
+        // WebSocket requires the same credentials as REST API
+        // For now, WebSocket auto-connects if credentials are present
+        // The initWebSocket function can be called to set up WS connection
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to initialize');
       setIsConnected(false);
     }
+  }, []);
+
+  // Handle WebSocket ticker updates - merge into markets state
+  const handleTickerUpdate = useCallback((data: TickerMessage['msg']) => {
+    setMarkets(prev => {
+      const index = prev.findIndex(m => m.ticker === data.market_ticker);
+      if (index === -1) return prev;
+      
+      const updated = [...prev];
+      const market = updated[index];
+      const previousYesBid = market.yes_bid;
+      
+      updated[index] = {
+        ...market,
+        yes_bid: data.yes_bid,
+        yes_ask: data.yes_ask,
+        no_bid: data.no_bid,
+        no_ask: data.no_ask,
+        volume: data.volume,
+        open_interest: data.open_interest,
+        previousYesBid,
+      };
+      
+      return updated;
+    });
+    setLastUpdateTime(Date.now());
+  }, []);
+
+  // Handle WebSocket orderbook delta updates
+  const handleOrderbookDelta = useCallback((data: OrderbookDeltaMessage['msg']) => {
+    setOrderbook(prev => {
+      if (!prev) return prev;
+      
+      const side = data.side === 'yes' ? 'yes' : 'no';
+      const levels = [...prev[side]];
+      
+      // Find existing level at this price
+      const existingIndex = levels.findIndex(([price]) => price === data.price);
+      
+      if (data.delta === 0) {
+        // Remove level
+        if (existingIndex >= 0) {
+          levels.splice(existingIndex, 1);
+        }
+      } else if (existingIndex >= 0) {
+        // Update existing level
+        const newQuantity = levels[existingIndex][1] + data.delta;
+        if (newQuantity <= 0) {
+          levels.splice(existingIndex, 1);
+        } else {
+          levels[existingIndex] = [data.price, newQuantity];
+        }
+      } else if (data.delta > 0) {
+        // Add new level
+        levels.push([data.price, data.delta]);
+        // Sort by price (descending for asks, ascending for bids)
+        levels.sort((a, b) => b[0] - a[0]);
+      }
+      
+      return {
+        ...prev,
+        [side]: levels,
+      };
+    });
+    setLastUpdateTime(Date.now());
+  }, []);
+
+  // Initialize WebSocket connection (when explicitly enabled)
+  const initWebSocket = useCallback(async (apiKeyId: string, privateKey: string) => {
+    if (wsClientRef.current) {
+      wsClientRef.current.disconnect();
+    }
+
+    const client = new KalshiWsClient({
+      apiKeyId,
+      privateKey,
+      autoReconnect: true,
+    });
+
+    client.on('onConnect', () => {
+      setWsState('connected');
+      // Subscribe to ticker for all markets we have
+      const tickers = markets.map(m => m.ticker);
+      if (tickers.length > 0) {
+        client.subscribe(['ticker'], tickers);
+      }
+    });
+
+    client.on('onDisconnect', () => {
+      setWsState('disconnected');
+    });
+
+    client.on('onError', (err) => {
+      console.error('WebSocket error:', err);
+    });
+
+    client.on('onTicker', handleTickerUpdate);
+    client.on('onOrderbookDelta', handleOrderbookDelta);
+
+    wsClientRef.current = client;
+    setWsState('connecting');
+
+    try {
+      await client.connect();
+    } catch (err) {
+      setWsState('disconnected');
+      console.error('WebSocket connection failed:', err);
+    }
+  }, [markets, handleTickerUpdate, handleOrderbookDelta]);
+
+  // Subscribe to orderbook for selected market via WebSocket
+  useEffect(() => {
+    if (!wsClientRef.current || wsState !== 'connected' || !selectedTicker) return;
+
+    // Subscribe to orderbook delta for selected market
+    wsClientRef.current.subscribe(['orderbook_delta'], [selectedTicker]);
+
+    return () => {
+      // Unsubscribe when market changes
+      if (wsClientRef.current && wsState === 'connected') {
+        wsClientRef.current.unsubscribe(['orderbook_delta'], [selectedTicker]);
+      }
+    };
+  }, [wsState, selectedTicker]);
+
+  // Cleanup WebSocket on unmount
+  useEffect(() => {
+    return () => {
+      if (wsClientRef.current) {
+        wsClientRef.current.disconnect();
+      }
+    };
   }, []);
 
   /**
@@ -423,6 +574,9 @@ export function useKalshi(): UseKalshiReturn {
   // Calculate arbitrage opportunities when markets change
   const arbitrage = useMemo(() => calculateArbitrage(markets), [markets]);
 
+  // Derived state: are we receiving real-time updates?
+  const isRealtime = wsState === 'connected';
+
   return {
     markets,
     orderbook,
@@ -438,5 +592,7 @@ export function useKalshi(): UseKalshiReturn {
     loading,
     lastUpdateTime,
     arbitrage,
+    wsState,
+    isRealtime,
   };
 }

@@ -10,6 +10,7 @@ interface HeaderProps {
   isConnected: boolean;
   isRateLimited?: boolean;
   isOffline?: boolean;
+  isRealtime?: boolean;
   error: string | null;
   lastUpdateTime?: number | null;
 }
@@ -40,6 +41,7 @@ export function Header({
   isConnected, 
   isRateLimited, 
   isOffline,
+  isRealtime,
   error,
   lastUpdateTime,
 }: HeaderProps) {
@@ -53,6 +55,9 @@ export function Header({
     }
     if (isRateLimited) {
       return { color: 'yellow' as const, icon: '◐', text: 'rate limited' };
+    }
+    if (isRealtime) {
+      return { color: 'cyan' as const, icon: '⚡', text: 'realtime' };
     }
     if (isConnected) {
       return { color: 'green' as const, icon: '●', text: 'connected' };

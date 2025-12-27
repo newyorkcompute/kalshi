@@ -32,6 +32,7 @@ export function App() {
     isConnected,
     isRateLimited,
     isOffline,
+    isRealtime,
     error,
     selectMarket,
     priceHistory,
@@ -88,6 +89,7 @@ export function App() {
         isConnected={isConnected}
         isRateLimited={isRateLimited}
         isOffline={isOffline}
+        isRealtime={isRealtime}
         error={error}
         lastUpdateTime={lastUpdateTime}
       />
