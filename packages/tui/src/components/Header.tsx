@@ -10,7 +10,6 @@ interface HeaderProps {
   isConnected: boolean;
   isRateLimited?: boolean;
   isOffline?: boolean;
-  isRefreshing?: boolean;
   error: string | null;
   lastUpdateTime?: number | null;
 }
@@ -41,7 +40,6 @@ export function Header({
   isConnected, 
   isRateLimited, 
   isOffline,
-  isRefreshing,
   error,
   lastUpdateTime,
 }: HeaderProps) {
@@ -85,7 +83,6 @@ export function Header({
       <Box flexDirection="column" alignItems="flex-end">
         <Text>
           Balance: <Text bold>{balanceText}</Text>
-          {isRefreshing && <Text color="cyan"> ↻</Text>}
         </Text>
         <Box>
           <Text color={status.color}>

@@ -84,14 +84,6 @@ describe('Header', () => {
     expect(lastFrame()).toContain('offline');
   });
 
-  it('shows refresh indicator when refreshing', () => {
-    const { lastFrame } = render(
-      <Header balance={null} isConnected={true} isRefreshing={true} error={null} />
-    );
-    
-    expect(lastFrame()).toContain('↻');
-  });
-
   it('shows last update time when data is stale', () => {
     // Set a timestamp 45 seconds ago (> 30s threshold)
     const fortyFiveSecondsAgo = Date.now() - 45000;

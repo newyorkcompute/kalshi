@@ -38,9 +38,6 @@ export function App() {
     lastUpdateTime,
   } = useKalshi();
 
-  // Check if any data is being refreshed
-  const isRefreshing = loading.markets || loading.portfolio || loading.orderbook;
-
   // Update orderbook when selection changes
   useEffect(() => {
     const ticker = markets[selectedIndex]?.ticker;
@@ -86,7 +83,6 @@ export function App() {
         isConnected={isConnected}
         isRateLimited={isRateLimited}
         isOffline={isOffline}
-        isRefreshing={isRefreshing}
         error={error}
         lastUpdateTime={lastUpdateTime}
       />
