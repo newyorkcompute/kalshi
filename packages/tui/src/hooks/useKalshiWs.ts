@@ -321,7 +321,8 @@ export function useKalshiWs(
     return () => {
       disconnect();
     };
-  }, [config]); // Only reconnect when config changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- Intentionally only reconnect when config changes
+  }, [config]);
 
   // Update subscriptions when marketTickers change
   useEffect(() => {
