@@ -4,7 +4,7 @@
  * Tracks positions and PnL for market making.
  */
 
-import type { Position, Fill, PnLSummary, Side, Action } from "./types.js";
+import type { Position, Fill, PnLSummary } from "./types.js";
 
 /**
  * InventoryTracker maintains position state for all markets

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { loadConfig, getKalshiCredentials, getBasePath, getConfigTemplate } from "./config.js";
 import { writeFileSync, unlinkSync } from "fs";
 import { DEFAULT_BASE_PATH, DEMO_BASE_PATH } from "@newyorkcompute/kalshi-core";

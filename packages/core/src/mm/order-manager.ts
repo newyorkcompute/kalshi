@@ -117,7 +117,7 @@ export class OrderManager {
       await this.ordersApi.cancelOrder(order.id);
       order.status = "cancelled";
       return true;
-    } catch (error) {
+    } catch {
       // Order may already be filled or cancelled
       return false;
     }
