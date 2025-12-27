@@ -1,0 +1,49 @@
+{
+  "name": "@newyorkcompute/kalshi-mm",
+  "version": "0.1.0",
+  "description": "Market maker daemon for Kalshi prediction markets",
+  "author": "NewYorkCompute",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "./dist/main.js",
+  "bin": {
+    "kalshi-mm": "./dist/main.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.1",
+    "@newyorkcompute/kalshi-core": "*",
+    "hono": "^4.7.10",
+    "js-yaml": "^4.1.0",
+    "kalshi-typescript": "^3.3.0",
+    "zod": "^3.25.36"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.28.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.15.29",
+    "@vitest/coverage-v8": "^3.2.4",
+    "eslint": "^9.28.0",
+    "tsx": "^4.19.2",
+    "typescript-eslint": "^8.33.1",
+    "vitest": "^3.2.3"
+  }
+}
+

@@ -1,0 +1,43 @@
+# Market Maker Daemon Configuration
+# Copy this file to config.yaml and customize
+
+# Optional HTTP control plane
+api:
+  enabled: true
+  port: 3001
+
+# Kalshi settings
+kalshi:
+  demo: true  # IMPORTANT: Start with demo mode!
+
+# Strategy selection
+strategy:
+  name: symmetric  # or 'avellaneda'
+  
+  symmetric:
+    spreadCents: 4        # Total spread (2¢ bid, 2¢ ask)
+    sizePerSide: 10       # Contracts per side
+    
+  avellaneda:
+    gamma: 0.1            # Risk aversion (higher = wider spreads)
+    k: 1.5                # Order arrival rate
+    sigma: 0.15           # Volatility estimate
+    maxPosition: 100      # Max inventory per side
+
+# Markets to quote (at least one required)
+markets:
+  - KXBTC-25JAN03-B60K  # Example: BTC above 60k by Jan 3
+
+# Risk limits
+risk:
+  maxPositionPerMarket: 100   # Max contracts per market
+  maxTotalExposure: 500       # Max total contracts
+  maxDailyLoss: 5000          # Max loss in cents ($50)
+  maxOrderSize: 25            # Max contracts per order
+  minSpread: 2                # Min spread in cents
+
+# Daemon settings
+daemon:
+  staleOrderMs: 30000         # Cancel orders older than 30s
+  reconnectDelayMs: 5000      # WebSocket reconnect delay
+

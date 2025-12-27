@@ -10,7 +10,8 @@
     "url": "https://github.com/newyorkcompute/kalshi"
   },
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "apps/*"
   ],
   "engines": {
     "node": ">=18.0.0"
