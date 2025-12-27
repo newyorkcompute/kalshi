@@ -74,5 +74,32 @@ describe('Header', () => {
     // Should be truncated to 40 chars
     expect(lastFrame()).toContain('This is a very long error message that ');
   });
+
+  it('shows offline status', () => {
+    const { lastFrame } = render(
+      <Header balance={null} isConnected={false} isOffline={true} error={null} />
+    );
+    
+    expect(lastFrame()).toContain('⊘');
+    expect(lastFrame()).toContain('offline');
+  });
+
+  it('shows refresh indicator when refreshing', () => {
+    const { lastFrame } = render(
+      <Header balance={null} isConnected={true} isRefreshing={true} error={null} />
+    );
+    
+    expect(lastFrame()).toContain('↻');
+  });
+
+  it('shows last update time', () => {
+    // Set a timestamp 30 seconds ago
+    const thirtySecondsAgo = Date.now() - 30000;
+    const { lastFrame } = render(
+      <Header balance={null} isConnected={true} lastUpdateTime={thirtySecondsAgo} error={null} />
+    );
+    
+    expect(lastFrame()).toContain('30s ago');
+  });
 });
 

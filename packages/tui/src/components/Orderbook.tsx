@@ -5,6 +5,7 @@
 
 import { Box, Text } from 'ink';
 import { formatExpiry, formatVolume } from '../utils.js';
+import { Spinner } from './Spinner.js';
 
 interface OrderbookLevel {
   price: number;
@@ -27,6 +28,7 @@ interface OrderbookProps {
   market: SelectedMarket | null;
   orderbook: OrderbookData | null;
   height: number;
+  isLoading?: boolean;
 }
 
 // Number of price levels to show
@@ -69,7 +71,7 @@ function formatQty(qty: number): string {
   return `${qty}`;
 }
 
-export function Orderbook({ market, orderbook, height }: OrderbookProps) {
+export function Orderbook({ market, orderbook, height, isLoading }: OrderbookProps) {
   // Parse orderbook into asks (no side, converted to YES equivalent) and bids (yes side)
   const asks: OrderbookLevel[] = (orderbook?.no ?? [])
     .slice(0, LEVELS_TO_SHOW)
@@ -151,7 +153,9 @@ export function Orderbook({ market, orderbook, height }: OrderbookProps) {
 
       {/* Content */}
       <Box flexDirection="column" paddingX={1} flexGrow={1}>
-        {!orderbook ? (
+        {isLoading && !orderbook ? (
+          <Spinner label="Loading orderbook..." />
+        ) : !orderbook ? (
           <Text color="gray">Select a market to view orderbook</Text>
         ) : (
           <>
