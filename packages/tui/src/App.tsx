@@ -9,6 +9,7 @@ import { Header } from './components/Header.js';
 import { Markets } from './components/Markets.js';
 import { Orderbook } from './components/Orderbook.js';
 import { Positions } from './components/Positions.js';
+import { Arbitrage } from './components/Arbitrage.js';
 import { Footer } from './components/Footer.js';
 import { PriceChart } from './components/PriceChart.js';
 import { useKalshi } from './hooks/useKalshi.js';
@@ -36,6 +37,7 @@ export function App() {
     priceHistory,
     loading,
     lastUpdateTime,
+    arbitrage,
   } = useKalshi();
 
   // Update orderbook when selection changes
@@ -65,8 +67,11 @@ export function App() {
   const leftWidth = Math.floor(width / 2);
   const rightWidth = width - leftWidth;
   const contentHeight = height - 6; // Header (3) + Footer (3)
-  const marketsHeight = Math.floor(contentHeight * 0.65);
-  const positionsHeight = contentHeight - marketsHeight;
+  
+  // Left column: Markets (50%) → Arbitrage (25%) → Positions (25%)
+  const marketsHeight = Math.floor(contentHeight * 0.50);
+  const arbitrageHeight = Math.floor(contentHeight * 0.25);
+  const positionsHeight = contentHeight - marketsHeight - arbitrageHeight;
   
   // Right column split: Orderbook (top) + Chart (bottom)
   const orderbookHeight = Math.floor(contentHeight * 0.55);
@@ -89,12 +94,17 @@ export function App() {
 
       {/* Main Content */}
       <Box flexDirection="row" height={contentHeight}>
-        {/* Left Column: Markets + Positions */}
+        {/* Left Column: Markets + Arbitrage + Positions */}
         <Box flexDirection="column" width={leftWidth}>
           <Markets
             markets={markets}
             selectedIndex={selectedIndex}
             height={marketsHeight}
+            isLoading={loading.markets}
+          />
+          <Arbitrage
+            opportunities={arbitrage}
+            height={arbitrageHeight}
             isLoading={loading.markets}
           />
           <Positions 

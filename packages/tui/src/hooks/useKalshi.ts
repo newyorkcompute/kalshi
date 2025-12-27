@@ -4,7 +4,7 @@
  * Includes rate limiting, timeouts, and error handling
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { 
   createMarketApi, 
   createPortfolioApi, 
@@ -15,6 +15,7 @@ import {
 } from '@newyorkcompute/kalshi-core';
 import type { MarketApi, PortfolioApi, Market, MarketPosition, Trade } from 'kalshi-typescript';
 import { getCached, setCache, CACHE_TTL } from '../cache.js';
+import { calculateArbitrage, type ArbitrageOpportunities } from '../utils.js';
 
 // Constants
 const DEFAULT_TIMEOUT = 30000; // 30 seconds
@@ -31,6 +32,7 @@ interface Position {
 // Extended market with previous price for change tracking
 interface MarketWithHistory extends MarketDisplay {
   previousYesBid?: number;
+  event_ticker?: string;
 }
 
 // Trade data for price history
@@ -62,6 +64,7 @@ interface UseKalshiReturn {
   fetchPriceHistory: (ticker: string, hours?: number) => Promise<void>;
   loading: LoadingState;
   lastUpdateTime: number | null;
+  arbitrage: ArbitrageOpportunities;
 }
 
 /**
@@ -229,6 +232,7 @@ export function useKalshi(): UseKalshiReturn {
           open_interest: m.open_interest,
           close_time: m.close_time,
           previousYesBid,
+          event_ticker: m.event_ticker,
         };
       });
       
@@ -416,6 +420,9 @@ export function useKalshi(): UseKalshiReturn {
     return () => clearTimeout(orderbookTimeout);
   }, [selectedTicker, fetchOrderbook]);
 
+  // Calculate arbitrage opportunities when markets change
+  const arbitrage = useMemo(() => calculateArbitrage(markets), [markets]);
+
   return {
     markets,
     orderbook,
@@ -430,5 +437,6 @@ export function useKalshi(): UseKalshiReturn {
     fetchPriceHistory,
     loading,
     lastUpdateTime,
+    arbitrage,
   };
 }
