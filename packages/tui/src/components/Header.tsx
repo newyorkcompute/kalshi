@@ -16,14 +16,17 @@ interface HeaderProps {
 }
 
 /**
- * Format a timestamp as relative time (e.g., "2s ago", "5m ago")
+ * Format a timestamp as relative time (e.g., "30s ago", "5m ago")
+ * Returns null if data is fresh (< 30 seconds)
  */
-function formatLastUpdate(timestamp: number | null | undefined): string {
-  if (!timestamp) return '';
+function formatLastUpdate(timestamp: number | null | undefined): string | null {
+  if (!timestamp) return null;
   
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
   
-  if (seconds < 5) return 'just now';
+  // Don't show anything if data is fresh
+  if (seconds < 30) return null;
+  
   if (seconds < 60) return `${seconds}s ago`;
   
   const minutes = Math.floor(seconds / 60);
@@ -83,15 +86,15 @@ export function Header({
         <Text>
           Balance: <Text bold>{balanceText}</Text>
           {isRefreshing && <Text color="cyan"> ↻</Text>}
-          {lastUpdate && !isRefreshing && <Text color="gray" dimColor> · {lastUpdate}</Text>}
         </Text>
         <Box>
           <Text color={status.color}>
             {status.icon}
           </Text>
           <Text color="gray"> {status.text}</Text>
-          {isOffline && lastUpdateTime && (
-            <Text color="gray" dimColor> · last update {lastUpdate}</Text>
+          {/* Show timestamp when offline OR when data is stale (> 30s) */}
+          {(isOffline || lastUpdate) && (
+            <Text color="gray" dimColor> · {lastUpdate || 'stale'}</Text>
           )}
         </Box>
         {error && (
