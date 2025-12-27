@@ -1,5 +1,29 @@
 # @newyorkcompute/kalshi-core
 
+## 0.3.0
+
+### Minor Changes
+
+- [#53](https://github.com/newyorkcompute/kalshi/pull/53) [`eb5bf58`](https://github.com/newyorkcompute/kalshi/commit/eb5bf587b3b5530511f7e23f2cc5957f7da81af7) Thanks [@siddharthkul](https://github.com/siddharthkul)! - Add WebSocket support for real-time market data
+
+  **kalshi-core:**
+
+  - New `KalshiWsClient` class for WebSocket connections
+  - Supports `ticker`, `orderbook_delta`, `trade`, and `fill` channels
+  - Automatic reconnection with exponential backoff
+  - RSA-PSS authentication for secure connections
+  - Ping/pong heartbeat for connection health
+  - New exports: `KalshiWsClient`, `generateWsAuthHeaders`, `generateSignedWsUrl`
+  - 10 new unit tests for WebSocket auth and types
+
+  **kalshi-tui:**
+
+  - New `useKalshiWs` hook for React components
+  - Real-time ticker updates with automatic state management
+  - Orderbook delta handling with level updates
+  - Trade feed with recent trades buffer
+  - Easy subscription management (subscribe/unsubscribe)
+
 ## 0.2.0
 
 ### Minor Changes
