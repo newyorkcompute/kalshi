@@ -5,6 +5,7 @@
 
 import { Box, Text } from 'ink';
 import { formatExpiry, getPriceChange, formatPrice, formatVolume } from '../utils.js';
+import { Spinner } from './Spinner.js';
 
 interface Market {
   ticker: string;
@@ -23,9 +24,10 @@ interface MarketsProps {
   markets: Market[];
   selectedIndex: number;
   height: number;
+  isLoading?: boolean;
 }
 
-export function Markets({ markets, selectedIndex, height }: MarketsProps) {
+export function Markets({ markets, selectedIndex, height, isLoading }: MarketsProps) {
   // Calculate visible window (scroll with selection)
   const visibleRows = height - 4; // Border + title + padding
   const halfWindow = Math.floor(visibleRows / 2);
@@ -58,8 +60,10 @@ export function Markets({ markets, selectedIndex, height }: MarketsProps) {
 
       {/* Market List */}
       <Box flexDirection="column" paddingX={1} flexGrow={1}>
-        {markets.length === 0 ? (
-          <Text color="gray">Loading markets...</Text>
+        {markets.length === 0 && isLoading ? (
+          <Spinner label="Loading markets..." />
+        ) : markets.length === 0 ? (
+          <Text color="gray">No markets found</Text>
         ) : (
           visibleMarkets.map((market, i) => {
             const actualIndex = startIndex + i;

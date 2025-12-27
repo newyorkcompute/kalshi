@@ -74,5 +74,36 @@ describe('Header', () => {
     // Should be truncated to 40 chars
     expect(lastFrame()).toContain('This is a very long error message that ');
   });
+
+  it('shows offline status', () => {
+    const { lastFrame } = render(
+      <Header balance={null} isConnected={false} isOffline={true} error={null} />
+    );
+    
+    expect(lastFrame()).toContain('⊘');
+    expect(lastFrame()).toContain('offline');
+  });
+
+  it('shows last update time when data is stale', () => {
+    // Set a timestamp 45 seconds ago (> 30s threshold)
+    const fortyFiveSecondsAgo = Date.now() - 45000;
+    const { lastFrame } = render(
+      <Header balance={null} isConnected={true} lastUpdateTime={fortyFiveSecondsAgo} error={null} />
+    );
+    
+    expect(lastFrame()).toContain('45s ago');
+  });
+
+  it('does not show timestamp when data is fresh', () => {
+    // Set a timestamp 10 seconds ago (< 30s threshold)
+    const tenSecondsAgo = Date.now() - 10000;
+    const { lastFrame } = render(
+      <Header balance={null} isConnected={true} lastUpdateTime={tenSecondsAgo} error={null} />
+    );
+    
+    // Should NOT show any "s ago" or "m ago"
+    expect(lastFrame()).not.toMatch(/\d+s ago/);
+    expect(lastFrame()).not.toMatch(/\d+m ago/);
+  });
 });
 

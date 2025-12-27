@@ -40,6 +40,14 @@ interface TradePoint {
   volume: number;
 }
 
+/** Loading states for each data type */
+interface LoadingState {
+  markets: boolean;
+  orderbook: boolean;
+  portfolio: boolean;
+  priceHistory: boolean;
+}
+
 interface UseKalshiReturn {
   markets: MarketWithHistory[];
   orderbook: OrderbookDisplay | null;
@@ -47,10 +55,13 @@ interface UseKalshiReturn {
   positions: Position[];
   isConnected: boolean;
   isRateLimited: boolean;
+  isOffline: boolean;
   error: string | null;
   selectMarket: (ticker: string) => void;
   priceHistory: TradePoint[];
   fetchPriceHistory: (ticker: string, hours?: number) => Promise<void>;
+  loading: LoadingState;
+  lastUpdateTime: number | null;
 }
 
 /**
@@ -65,6 +76,24 @@ function isRateLimitError(error: unknown): boolean {
   return false;
 }
 
+/**
+ * Check if an error is a network/offline error
+ */
+function isNetworkError(error: unknown): boolean {
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase();
+    return msg.includes('network') ||
+      msg.includes('fetch') ||
+      msg.includes('enotfound') ||
+      msg.includes('econnrefused') ||
+      msg.includes('econnreset') ||
+      msg.includes('etimedout') ||
+      msg.includes('offline') ||
+      msg.includes('internet');
+  }
+  return false;
+}
+
 export function useKalshi(): UseKalshiReturn {
   const [markets, setMarkets] = useState<MarketWithHistory[]>([]);
   const [orderbook, setOrderbook] = useState<OrderbookDisplay | null>(null);
@@ -72,9 +101,17 @@ export function useKalshi(): UseKalshiReturn {
   const [positions, setPositions] = useState<Position[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [isRateLimited, setIsRateLimited] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   const [priceHistory, setPriceHistory] = useState<TradePoint[]>([]);
+  const [lastUpdateTime, setLastUpdateTime] = useState<number | null>(null);
+  const [loading, setLoading] = useState<LoadingState>({
+    markets: true,
+    orderbook: false,
+    portfolio: true,
+    priceHistory: false,
+  });
 
   // API clients
   const marketApiRef = useRef<MarketApi | null>(null);
@@ -103,23 +140,30 @@ export function useKalshi(): UseKalshiReturn {
   }, []);
 
   /**
-   * Handle successful API call - reset rate limiting
+   * Handle successful API call - reset rate limiting and offline status
    */
   const handleSuccess = useCallback(() => {
     consecutiveFailuresRef.current = 0;
     pollIntervalRef.current = MIN_POLL_INTERVAL;
     circuitBreakerOpenRef.current = false;
     setIsRateLimited(false);
+    setIsOffline(false);
     setIsConnected(true);
+    setLastUpdateTime(Date.now());
+    setError(null);
   }, []);
 
   /**
-   * Handle failed API call - apply exponential backoff
+   * Handle failed API call - apply exponential backoff and detect offline
    */
   const handleFailure = useCallback((err: unknown) => {
     consecutiveFailuresRef.current += 1;
     
-    if (isRateLimitError(err)) {
+    // Detect network/offline errors
+    if (isNetworkError(err)) {
+      setIsOffline(true);
+      setError('Network error. Retrying...');
+    } else if (isRateLimitError(err)) {
       // Exponential backoff for rate limits
       pollIntervalRef.current = Math.min(
         pollIntervalRef.current * 2,
@@ -127,6 +171,9 @@ export function useKalshi(): UseKalshiReturn {
       );
       setIsRateLimited(true);
       setError(`Rate limited. Backing off to ${Math.round(pollIntervalRef.current / 1000)}s`);
+    } else {
+      // Generic error
+      setError(err instanceof Error ? err.message : 'Unknown error');
     }
     
     // Circuit breaker
@@ -139,6 +186,7 @@ export function useKalshi(): UseKalshiReturn {
         circuitBreakerOpenRef.current = false;
         consecutiveFailuresRef.current = 0;
         pollIntervalRef.current = MIN_POLL_INTERVAL;
+        setIsOffline(false);
       }, MAX_POLL_INTERVAL);
     }
   }, []);
@@ -147,6 +195,7 @@ export function useKalshi(): UseKalshiReturn {
   const fetchMarkets = useCallback(async () => {
     if (!marketApiRef.current || circuitBreakerOpenRef.current) return;
 
+    setLoading(prev => ({ ...prev, markets: true }));
     try {
       const response = await withTimeout(
         marketApiRef.current.getMarkets(
@@ -190,6 +239,8 @@ export function useKalshi(): UseKalshiReturn {
       handleSuccess();
     } catch (err) {
       handleFailure(err);
+    } finally {
+      setLoading(prev => ({ ...prev, markets: false }));
     }
   }, [handleSuccess, handleFailure]);
 
@@ -197,6 +248,7 @@ export function useKalshi(): UseKalshiReturn {
   const fetchOrderbook = useCallback(async (ticker: string) => {
     if (!marketApiRef.current || !ticker || circuitBreakerOpenRef.current) return;
 
+    setLoading(prev => ({ ...prev, orderbook: true }));
     try {
       const response = await withTimeout(
         marketApiRef.current.getMarketOrderbook(ticker, 10),
@@ -219,6 +271,8 @@ export function useKalshi(): UseKalshiReturn {
       handleSuccess();
     } catch (err) {
       handleFailure(err);
+    } finally {
+      setLoading(prev => ({ ...prev, orderbook: false }));
     }
   }, [handleSuccess, handleFailure]);
 
@@ -226,6 +280,7 @@ export function useKalshi(): UseKalshiReturn {
   const fetchPortfolio = useCallback(async () => {
     if (!portfolioApiRef.current || circuitBreakerOpenRef.current) return;
 
+    setLoading(prev => ({ ...prev, portfolio: true }));
     try {
       const [balanceRes, positionsRes] = await Promise.all([
         withTimeout(
@@ -251,6 +306,8 @@ export function useKalshi(): UseKalshiReturn {
       handleSuccess();
     } catch (err) {
       handleFailure(err);
+    } finally {
+      setLoading(prev => ({ ...prev, portfolio: false }));
     }
   }, [handleSuccess, handleFailure]);
 
@@ -266,6 +323,7 @@ export function useKalshi(): UseKalshiReturn {
       return;
     }
 
+    setLoading(prev => ({ ...prev, priceHistory: true }));
     try {
       const now = Math.floor(Date.now() / 1000);
       const minTs = now - (hours * 60 * 60);
@@ -298,6 +356,8 @@ export function useKalshi(): UseKalshiReturn {
       handleSuccess();
     } catch (err) {
       handleFailure(err);
+    } finally {
+      setLoading(prev => ({ ...prev, priceHistory: false }));
     }
   }, [handleSuccess, handleFailure]);
 
@@ -363,9 +423,12 @@ export function useKalshi(): UseKalshiReturn {
     positions,
     isConnected,
     isRateLimited,
+    isOffline,
     error,
     selectMarket,
     priceHistory,
     fetchPriceHistory,
+    loading,
+    lastUpdateTime,
   };
 }

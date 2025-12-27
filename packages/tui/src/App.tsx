@@ -30,9 +30,12 @@ export function App() {
     positions, 
     isConnected,
     isRateLimited,
+    isOffline,
     error,
     selectMarket,
     priceHistory,
+    loading,
+    lastUpdateTime,
   } = useKalshi();
 
   // Update orderbook when selection changes
@@ -79,7 +82,9 @@ export function App() {
         balance={balance} 
         isConnected={isConnected}
         isRateLimited={isRateLimited}
+        isOffline={isOffline}
         error={error}
+        lastUpdateTime={lastUpdateTime}
       />
 
       {/* Main Content */}
@@ -90,10 +95,12 @@ export function App() {
             markets={markets}
             selectedIndex={selectedIndex}
             height={marketsHeight}
+            isLoading={loading.markets}
           />
           <Positions 
             positions={positions} 
             height={positionsHeight}
+            isLoading={loading.portfolio}
           />
         </Box>
 
@@ -103,6 +110,7 @@ export function App() {
             market={selectedMarket}
             orderbook={orderbook}
             height={orderbookHeight}
+            isLoading={loading.orderbook}
           />
           <PriceChart
             ticker={selectedMarket?.ticker ?? null}

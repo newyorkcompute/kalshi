@@ -4,6 +4,7 @@
  */
 
 import { Box, Text } from 'ink';
+import { Spinner } from './Spinner.js';
 
 interface Position {
   ticker: string;
@@ -14,9 +15,10 @@ interface Position {
 interface PositionsProps {
   positions: Position[];
   height: number;
+  isLoading?: boolean;
 }
 
-export function Positions({ positions, height }: PositionsProps) {
+export function Positions({ positions, height, isLoading }: PositionsProps) {
   const formatCurrency = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
   return (
@@ -34,7 +36,9 @@ export function Positions({ positions, height }: PositionsProps) {
 
       {/* Positions List */}
       <Box flexDirection="column" paddingX={1} flexGrow={1}>
-        {positions.length === 0 ? (
+        {isLoading && positions.length === 0 ? (
+          <Spinner label="Loading positions..." />
+        ) : positions.length === 0 ? (
           <Text color="gray">No open positions</Text>
         ) : (
           positions.slice(0, height - 3).map((pos) => {
