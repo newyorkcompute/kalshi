@@ -63,3 +63,21 @@ export {
   type OrderValidationResult,
 } from "./validate-order.js";
 
+// WebSocket (real-time data)
+export {
+  KalshiWsClient,
+  generateWsAuthHeaders,
+  generateSignedWsUrl,
+  type KalshiWsConfig,
+  type KalshiWsEventHandlers,
+  type SubscriptionChannel,
+  type ConnectionState,
+  type ActiveSubscriptions,
+  type OrderbookDeltaMessage,
+  type TickerMessage,
+  type TradeMessage,
+  type FillMessage,
+  type WsMessage,
+  WS_ENDPOINTS,
+} from "./websocket/index.js";
+
