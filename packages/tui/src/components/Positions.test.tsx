@@ -45,12 +45,13 @@ describe('Positions', () => {
     expect(lastFrame()).toContain('No open positions');
   });
 
-  it('displays position ticker', () => {
+  it('displays position ticker (truncated to 16 chars)', () => {
     const { lastFrame } = render(
       <Positions positions={mockPositions} height={10} />
     );
     
-    expect(lastFrame()).toContain('KXBTC-25JAN03-B100');
+    // Ticker is truncated to 16 chars to fit P&L column
+    expect(lastFrame()).toContain('KXBTC-25JAN03-B1');
   });
 
   it('shows YES for long positions', () => {

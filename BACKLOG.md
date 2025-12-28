@@ -32,9 +32,9 @@
 | ⬜ | High | Market search/filter | Type to filter markets by name/ticker |
 | ⬜ | High | Resting orders panel | Show pending limit orders |
 | ⬜ | Medium | Keyboard shortcuts help | Press `?` to show all shortcuts |
-| ⬜ | Medium | Watchlist/favorites | Save favorite markets locally |
+| ✅ | Medium | Watchlist/favorites | Save favorite markets locally |
 | ⬜ | Medium | Event grouping | Group related markets together |
-| ⬜ | Medium | Config file | `~/.kalshi-tui/config.json` for preferences |
+| ✅ | Medium | Config file | `~/.kalshi-tui/config.json` for preferences |
 | ⬜ | Low | Notifications/alerts | Alert on price thresholds |
 | ⬜ | Low | Position P&L display | Show profit/loss on positions |
 | ✅ | Low | Sort toggle | Press `s` to cycle sort: volume → 24h → OI |
@@ -69,6 +69,7 @@
 
 | Date | Item | PR |
 |------|------|----|
+| 2025-12-28 | TUI config file + watchlist/favorites | #65 |
 | 2025-12-28 | TUI sort toggle (s key) | #63 |
 | 2025-12-28 | Remove Smithery references | #62 |
 | 2025-12-28 | Upgrade to Node 22 LTS | #61 |

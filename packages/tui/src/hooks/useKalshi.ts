@@ -31,6 +31,10 @@ interface Position {
   ticker: string;
   position: number;
   market_exposure: number;
+  /** Current market price (yes_bid) in cents */
+  currentPrice?: number;
+  /** Unrealized P&L in cents */
+  pnl?: number;
 }
 
 // Extended market with previous price for change tracking
@@ -576,6 +580,49 @@ export function useKalshi(): UseKalshiReturn {
   // Calculate arbitrage opportunities when markets change
   const arbitrage = useMemo(() => calculateArbitrage(markets), [markets]);
 
+  // Enrich positions with current prices and P&L
+  const positionsWithPnl = useMemo(() => {
+    // Create a price lookup map from markets
+    const priceMap = new Map<string, number>();
+    for (const m of markets) {
+      if (m.yes_bid !== undefined) {
+        priceMap.set(m.ticker, m.yes_bid);
+      }
+    }
+
+    return positions.map(pos => {
+      const currentPrice = priceMap.get(pos.ticker);
+      
+      if (currentPrice === undefined || pos.position === 0) {
+        return pos;
+      }
+
+      // Calculate average cost per contract (in cents)
+      // market_exposure is the amount at risk
+      const avgCost = pos.market_exposure / Math.abs(pos.position);
+      
+      // Calculate P&L based on position side
+      let pnl: number;
+      if (pos.position > 0) {
+        // YES position: profit if price goes up
+        // Current value = currentPrice per contract
+        // Cost = avgCost per contract
+        pnl = (currentPrice - avgCost) * pos.position;
+      } else {
+        // NO position: profit if price goes down
+        // NO value = (100 - currentPrice) per contract
+        // Cost = avgCost per contract
+        pnl = ((100 - currentPrice) - avgCost) * Math.abs(pos.position);
+      }
+
+      return {
+        ...pos,
+        currentPrice,
+        pnl: Math.round(pnl),
+      };
+    });
+  }, [positions, markets]);
+
   // Derived state: are we receiving real-time updates?
   const isRealtime = wsState === 'connected';
 
@@ -583,7 +630,7 @@ export function useKalshi(): UseKalshiReturn {
     markets,
     orderbook,
     balance,
-    positions,
+    positions: positionsWithPnl,
     isConnected,
     isRateLimited,
     isOffline,
