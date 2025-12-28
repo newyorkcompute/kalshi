@@ -648,18 +648,27 @@ export class Bot {
    */
   private shouldUpdateQuotes(ticker: string, newBid: number, newAsk: number): boolean {
     const now = Date.now();
+    const lastUpdate = this.lastQuoteUpdate.get(ticker) ?? 0;
+    const lastPrices = this.lastBBO.get(ticker);
+    
+    // FIRST quote for this market - always allow (staggered by global rate limit)
+    if (lastUpdate === 0) {
+      // But still respect global rate limit to stagger initial quotes
+      if (now - this.lastGlobalApiCall < this.MIN_GLOBAL_API_INTERVAL_MS) {
+        return false; // Wait for global slot
+      }
+      this.lastGlobalApiCall = now;
+      return true;
+    }
     
     // GLOBAL rate limit - prevent burst of API calls across all markets
     if (now - this.lastGlobalApiCall < this.MIN_GLOBAL_API_INTERVAL_MS) {
       return false; // Too many API calls globally
     }
-    
-    const lastUpdate = this.lastQuoteUpdate.get(ticker) ?? 0;
-    const lastPrices = this.lastBBO.get(ticker);
 
     // Always update if it's been a while for this specific market
     if (now - lastUpdate > this.MIN_QUOTE_INTERVAL_MS * 2) {
-      this.lastGlobalApiCall = now; // Mark global API call
+      this.lastGlobalApiCall = now;
       return true;
     }
 
@@ -672,14 +681,14 @@ export class Bot {
         
         // Only update if price moved significantly
         if (bidChange >= this.MIN_PRICE_CHANGE || askChange >= this.MIN_PRICE_CHANGE) {
-          this.lastGlobalApiCall = now; // Mark global API call
+          this.lastGlobalApiCall = now;
           return true;
         }
       }
       return false; // Skip - too soon and no significant change
     }
 
-    this.lastGlobalApiCall = now; // Mark global API call
+    this.lastGlobalApiCall = now;
     return true; // Enough time has passed
   }
 
