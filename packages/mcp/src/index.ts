@@ -1,7 +1,7 @@
 /**
  * Kalshi MCP Server
  *
- * Exports createServer for Smithery integration and runs as CLI when executed directly.
+ * MCP server for interacting with Kalshi prediction markets via AI assistants.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -42,8 +42,7 @@ export const SERVER_NAME = "kalshi-mcp";
 export const SERVER_VERSION = "0.3.0";
 
 /**
- * Configuration schema for Smithery
- * Defines the required credentials for Kalshi API authentication
+ * Configuration schema for Kalshi API authentication
  */
 export const configSchema = z.object({
   KALSHI_API_KEY: z.string().describe("Your Kalshi API key ID"),
@@ -61,11 +60,11 @@ interface CreateServerOptions {
 /**
  * Creates and configures the Kalshi MCP server
  *
- * @param options - Server options including config from Smithery or environment
+ * @param options - Server options including config object or environment variables
  * @returns Configured MCP server instance
  */
 export default function createServer(options: CreateServerOptions = {}) {
-  // Get config from options (Smithery) or fall back to environment variables
+  // Get config from options or fall back to environment variables
   const apiKey = options.config?.KALSHI_API_KEY || process.env.KALSHI_API_KEY;
   const privateKey =
     options.config?.KALSHI_PRIVATE_KEY || process.env.KALSHI_PRIVATE_KEY;
@@ -123,6 +122,6 @@ export default function createServer(options: CreateServerOptions = {}) {
   registerGetFills(server, portfolioApi);
   registerGetSettlements(server, portfolioApi);
 
-  // Return the underlying server for Smithery
+  // Return the underlying server instance
   return server.server;
 }
