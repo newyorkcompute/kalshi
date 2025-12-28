@@ -33,13 +33,28 @@ const AdaptiveStrategySchema = z.object({
   minSpreadCents: z.number().min(1).max(20).default(2),
   sizePerSide: z.number().min(1).max(100).default(5),
   maxMarketSpread: z.number().min(5).max(50).default(20),
+  skewFactor: z.number().min(0).max(5).default(0.5),
+  maxInventorySkew: z.number().min(1).max(100).default(30),
+  // Phase 2: Elite MM options
+  useMicroprice: z.boolean().default(true),
+  multiLevel: z.boolean().default(false),
+  adverseSelectionMultiplier: z.number().min(1).max(10).default(2.0),
+  // Time-decay near expiry
+  expiryWidenStartSec: z.number().min(60).max(86400).default(3600),
+  expiryStopQuoteSec: z.number().min(0).max(3600).default(300),
+  expirySpreadMultiplier: z.number().min(1).max(5).default(1.5),
 });
 
 const AvellanedaStrategySchema = z.object({
   gamma: z.number().min(0.01).max(10).default(0.1),
   k: z.number().min(0.1).max(10).default(1.5),
   sigma: z.number().min(0.01).max(1).default(0.15),
+  T: z.number().min(60).max(86400).default(3600),  // Time horizon in seconds
   maxPosition: z.number().min(1).max(1000).default(100),
+  sizePerSide: z.number().min(1).max(100).default(5),
+  minSpread: z.number().min(1).max(20).default(2),
+  maxSpread: z.number().min(5).max(50).default(20),
+  useMarketExpiry: z.boolean().default(true),
 });
 
 const StrategyConfigSchema = z.object({

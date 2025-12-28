@@ -46,6 +46,24 @@ export interface AdaptiveParams {
   multiLevel: boolean;
   /** Spread multiplier when adverse selection detected (default 2) */
   adverseSelectionMultiplier: number;
+  
+  // === Time-decay near expiry ===
+  
+  /** 
+   * Seconds before expiry to start widening spread (default 3600 = 1 hour)
+   * Markets become more volatile near expiry
+   */
+  expiryWidenStartSec: number;
+  /** 
+   * Seconds before expiry to stop quoting entirely (default 300 = 5 min)
+   * Too risky to quote in final minutes
+   */
+  expiryStopQuoteSec: number;
+  /** 
+   * Spread multiplier near expiry (default 1.5)
+   * Applied when within expiryWidenStartSec
+   */
+  expirySpreadMultiplier: number;
 }
 
 const DEFAULT_PARAMS: AdaptiveParams = {
@@ -59,6 +77,10 @@ const DEFAULT_PARAMS: AdaptiveParams = {
   useMicroprice: true,
   multiLevel: false,
   adverseSelectionMultiplier: 2.0,
+  // Time-decay defaults
+  expiryWidenStartSec: 3600,  // 1 hour before expiry
+  expiryStopQuoteSec: 300,    // 5 minutes before expiry
+  expirySpreadMultiplier: 1.5,
 };
 
 /**
@@ -92,8 +114,23 @@ export class AdaptiveStrategy extends BaseStrategy {
       return [];
     }
 
-    const { bestBid, bestAsk, position, microprice, adverseSelection } = snapshot;
+    const { bestBid, bestAsk, position, microprice, adverseSelection, timeToExpiry } = snapshot;
     const marketSpread = bestAsk - bestBid;
+
+    // === TIME-DECAY NEAR EXPIRY ===
+    // Stop quoting entirely in final minutes (too risky)
+    if (timeToExpiry !== undefined && timeToExpiry <= this.params.expiryStopQuoteSec) {
+      return [];
+    }
+
+    // Calculate expiry spread multiplier
+    let expiryMultiplier = 1.0;
+    if (timeToExpiry !== undefined && timeToExpiry <= this.params.expiryWidenStartSec) {
+      // Linear interpolation: 1.0 at expiryWidenStartSec → expirySpreadMultiplier at expiryStopQuoteSec
+      const progress = 1 - (timeToExpiry - this.params.expiryStopQuoteSec) / 
+                           (this.params.expiryWidenStartSec - this.params.expiryStopQuoteSec);
+      expiryMultiplier = 1.0 + progress * (this.params.expirySpreadMultiplier - 1.0);
+    }
 
     // Skip illiquid markets (wide spread = no one trading)
     if (marketSpread > this.params.maxMarketSpread) {
@@ -111,12 +148,12 @@ export class AdaptiveStrategy extends BaseStrategy {
 
     // Adjust edge for adverse selection
     let effectiveEdge = this.params.edgeCents;
-    let effectiveMinSpread = this.params.minSpreadCents;
+    let effectiveMinSpread = this.params.minSpreadCents * expiryMultiplier;
     
     if (adverseSelection) {
       // Widen spread when being picked off
       effectiveEdge = 0; // Don't quote inside market
-      effectiveMinSpread = this.params.minSpreadCents * this.params.adverseSelectionMultiplier;
+      effectiveMinSpread = this.params.minSpreadCents * this.params.adverseSelectionMultiplier * expiryMultiplier;
     }
 
     // Multi-level quoting if enabled
@@ -274,6 +311,16 @@ export class AdaptiveStrategy extends BaseStrategy {
     }
     if (typeof params.adverseSelectionMultiplier === "number") {
       this.params.adverseSelectionMultiplier = params.adverseSelectionMultiplier;
+    }
+    // Time-decay params
+    if (typeof params.expiryWidenStartSec === "number") {
+      this.params.expiryWidenStartSec = params.expiryWidenStartSec;
+    }
+    if (typeof params.expiryStopQuoteSec === "number") {
+      this.params.expiryStopQuoteSec = params.expiryStopQuoteSec;
+    }
+    if (typeof params.expirySpreadMultiplier === "number") {
+      this.params.expirySpreadMultiplier = params.expirySpreadMultiplier;
     }
   }
 
