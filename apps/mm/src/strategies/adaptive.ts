@@ -8,6 +8,7 @@
  * - Multi-level quoting for better inventory management
  * - Widens spread when adverse selection detected
  * - Respects minimum profit margin
+ * - Dynamic skew based on orderbook imbalance (Phase 3)
  */
 
 import type { Quote } from "@newyorkcompute/kalshi-core";
@@ -23,7 +24,7 @@ export interface AdaptiveParams {
   /** Skip markets with spread wider than this (illiquid) */
   maxMarketSpread: number;
   /** 
-   * Inventory skew factor (default 0.5)
+   * Base inventory skew factor (default 0.5)
    * Higher = more aggressive skew to flatten inventory
    * 0 = no skew (symmetric quoting)
    * 
@@ -46,6 +47,52 @@ export interface AdaptiveParams {
   multiLevel: boolean;
   /** Spread multiplier when adverse selection detected (default 2) */
   adverseSelectionMultiplier: number;
+  
+  // === Phase 3: Dynamic Skew + Imbalance Awareness ===
+  
+  /**
+   * Enable dynamic skew based on orderbook imbalance (default true)
+   * When enabled, skewFactor is automatically scaled based on:
+   * 1. Current inventory (existing behavior)
+   * 2. Orderbook imbalance (new: trend detection)
+   * 
+   * This helps avoid getting stepped over in trending markets.
+   */
+  dynamicSkew: boolean;
+  
+  /**
+   * How much to boost skew when imbalance is against your position (default 1.5)
+   * 
+   * Example: You're LONG, imbalance is -0.5 (bearish)
+   * → Effective skew = baseSkew * (1 + 0.5 * 1.5) = baseSkew * 1.75
+   * → More aggressive selling to flatten before market drops
+   */
+  imbalanceSkewMultiplier: number;
+  
+  /**
+   * Threshold for "extreme" imbalance (default 0.6, range 0-1)
+   * Above this, apply additional protections
+   */
+  extremeImbalanceThreshold: number;
+  
+  /**
+   * When imbalance is extreme and against your position, reduce size on risky side (default true)
+   * This prevents accumulating more losing inventory in trending markets
+   */
+  reduceRiskySideOnImbalance: boolean;
+  
+  /**
+   * Size reduction factor when imbalance is extreme (default 0.5)
+   * e.g., 0.5 = reduce to 50% size on the risky side
+   */
+  imbalanceSizeReduction: number;
+  
+  /**
+   * Threshold for "very extreme" imbalance to skip risky side entirely (default 0.8)
+   * Above this, don't quote on the side that would get stepped over
+   * Set to 1.0 to disable (never skip)
+   */
+  skipRiskySideThreshold: number;
   
   // === Time-decay near expiry ===
   
@@ -77,6 +124,13 @@ const DEFAULT_PARAMS: AdaptiveParams = {
   useMicroprice: true,
   multiLevel: false,
   adverseSelectionMultiplier: 2.0,
+  // Phase 3 defaults - Dynamic Skew
+  dynamicSkew: true,
+  imbalanceSkewMultiplier: 1.5,
+  extremeImbalanceThreshold: 0.6,
+  reduceRiskySideOnImbalance: true,
+  imbalanceSizeReduction: 0.5,
+  skipRiskySideThreshold: 0.75,  // At 75%+ imbalance, don't quote risky side at all
   // Time-decay defaults
   expiryWidenStartSec: 3600,  // 1 hour before expiry
   expiryStopQuoteSec: 300,    // 5 minutes before expiry
@@ -114,7 +168,7 @@ export class AdaptiveStrategy extends BaseStrategy {
       return [];
     }
 
-    const { bestBid, bestAsk, position, microprice, adverseSelection, timeToExpiry } = snapshot;
+    const { bestBid, bestAsk, position, microprice, adverseSelection, timeToExpiry, imbalance } = snapshot;
     const marketSpread = bestAsk - bestBid;
 
     // === TIME-DECAY NEAR EXPIRY ===
@@ -142,9 +196,30 @@ export class AdaptiveStrategy extends BaseStrategy {
       ? microprice 
       : (bestBid + bestAsk) / 2;
 
-    // Calculate inventory and skew
+    // === PHASE 3: DYNAMIC SKEW BASED ON IMBALANCE ===
     const inventory = position?.netExposure ?? 0;
-    const inventorySkew = inventory * this.params.skewFactor;
+    const currentImbalance = imbalance ?? 0;
+    
+    // Calculate effective skew factor
+    let effectiveSkewFactor = this.params.skewFactor;
+    
+    if (this.params.dynamicSkew && currentImbalance !== 0) {
+      // Detect if imbalance is "against" our position
+      // LONG (+inventory) + negative imbalance (bearish) = against us → boost skew to sell faster
+      // SHORT (-inventory) + positive imbalance (bullish) = against us → boost skew to buy faster
+      const imbalanceAgainstUs = 
+        (inventory > 0 && currentImbalance < 0) || 
+        (inventory < 0 && currentImbalance > 0);
+      
+      if (imbalanceAgainstUs) {
+        // Boost skew proportionally to how extreme the imbalance is
+        const imbalanceMagnitude = Math.abs(currentImbalance);
+        const skewBoost = 1 + (imbalanceMagnitude * this.params.imbalanceSkewMultiplier);
+        effectiveSkewFactor = this.params.skewFactor * skewBoost;
+      }
+    }
+    
+    const inventorySkew = inventory * effectiveSkewFactor;
 
     // Adjust edge for adverse selection
     let effectiveEdge = this.params.edgeCents;
@@ -191,7 +266,7 @@ export class AdaptiveStrategy extends BaseStrategy {
       return [];
     }
 
-    // Determine sizes based on inventory limits
+    // === PHASE 3: SIZE ADJUSTMENT BASED ON IMBALANCE ===
     let bidSize = this.params.sizePerSide;
     let askSize = this.params.sizePerSide;
 
@@ -202,6 +277,32 @@ export class AdaptiveStrategy extends BaseStrategy {
     // If we're at max short inventory, don't ask (don't accumulate more)
     if (inventory <= -this.params.maxInventorySkew) {
       askSize = 0;
+    }
+
+    // Skip risky side entirely when imbalance is VERY extreme
+    // This prevents getting stepped over in strongly trending markets
+    if (Math.abs(currentImbalance) >= this.params.skipRiskySideThreshold) {
+      // Positive imbalance (bullish) → SKIP selling (you'll get bought and price goes up)
+      // Negative imbalance (bearish) → SKIP buying (you'll get sold and price goes down)
+      if (currentImbalance > 0) {
+        askSize = 0; // Don't sell into a bullish market
+      } else {
+        bidSize = 0; // Don't buy into a bearish market
+      }
+    }
+    // Reduce size on "risky" side when imbalance is moderately extreme
+    else if (this.params.reduceRiskySideOnImbalance && Math.abs(currentImbalance) >= this.params.extremeImbalanceThreshold) {
+      const reduction = this.params.imbalanceSizeReduction;
+      
+      // Positive imbalance (bullish) → risky to SELL (you'll get bought and price goes up)
+      // Negative imbalance (bearish) → risky to BUY (you'll get sold and price goes down)
+      if (currentImbalance > 0) {
+        // Bullish: reduce ask size (selling is risky)
+        askSize = Math.max(1, Math.floor(askSize * reduction));
+      } else {
+        // Bearish: reduce bid size (buying is risky)
+        bidSize = Math.max(1, Math.floor(bidSize * reduction));
+      }
     }
 
     // Skip if both sides are zero
@@ -311,6 +412,25 @@ export class AdaptiveStrategy extends BaseStrategy {
     }
     if (typeof params.adverseSelectionMultiplier === "number") {
       this.params.adverseSelectionMultiplier = params.adverseSelectionMultiplier;
+    }
+    // Phase 3 params - Dynamic Skew
+    if (typeof params.dynamicSkew === "boolean") {
+      this.params.dynamicSkew = params.dynamicSkew;
+    }
+    if (typeof params.imbalanceSkewMultiplier === "number") {
+      this.params.imbalanceSkewMultiplier = params.imbalanceSkewMultiplier;
+    }
+    if (typeof params.extremeImbalanceThreshold === "number") {
+      this.params.extremeImbalanceThreshold = params.extremeImbalanceThreshold;
+    }
+    if (typeof params.reduceRiskySideOnImbalance === "boolean") {
+      this.params.reduceRiskySideOnImbalance = params.reduceRiskySideOnImbalance;
+    }
+    if (typeof params.imbalanceSizeReduction === "number") {
+      this.params.imbalanceSizeReduction = params.imbalanceSizeReduction;
+    }
+    if (typeof params.skipRiskySideThreshold === "number") {
+      this.params.skipRiskySideThreshold = params.skipRiskySideThreshold;
     }
     // Time-decay params
     if (typeof params.expiryWidenStartSec === "number") {
