@@ -1,5 +1,15 @@
 # @newyorkcompute/kalshi-core
 
+## 0.4.0
+
+### Minor Changes
+
+- [#57](https://github.com/newyorkcompute/kalshi/pull/57) [`54c1ad3`](https://github.com/newyorkcompute/kalshi/commit/54c1ad3b38852309eade63b01793941d9de23f04) Thanks [@siddharthkul](https://github.com/siddharthkul)! - Add market making primitives:
+  - `OrderManager`: Order lifecycle management with bulk operations
+  - `InventoryTracker`: Position tracking and PnL calculation
+  - `RiskManager`: Risk limits enforcement (position, exposure, daily loss)
+  - New types: `ManagedOrder`, `Quote`, `Position`, `Fill`, `PnLSummary`
+
 ## 0.3.0
 
 ### Minor Changes
