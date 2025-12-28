@@ -45,6 +45,7 @@ const AdaptiveStrategySchema = z.object({
   extremeImbalanceThreshold: z.number().min(0.1).max(1).default(0.6),
   reduceRiskySideOnImbalance: z.boolean().default(true),
   imbalanceSizeReduction: z.number().min(0.1).max(1).default(0.5),
+  skipRiskySideThreshold: z.number().min(0.5).max(1).default(0.75),
   // Time-decay near expiry
   expiryWidenStartSec: z.number().min(60).max(86400).default(3600),
   expiryStopQuoteSec: z.number().min(0).max(3600).default(300),

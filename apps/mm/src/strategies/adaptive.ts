@@ -87,6 +87,13 @@ export interface AdaptiveParams {
    */
   imbalanceSizeReduction: number;
   
+  /**
+   * Threshold for "very extreme" imbalance to skip risky side entirely (default 0.8)
+   * Above this, don't quote on the side that would get stepped over
+   * Set to 1.0 to disable (never skip)
+   */
+  skipRiskySideThreshold: number;
+  
   // === Time-decay near expiry ===
   
   /** 
@@ -123,6 +130,7 @@ const DEFAULT_PARAMS: AdaptiveParams = {
   extremeImbalanceThreshold: 0.6,
   reduceRiskySideOnImbalance: true,
   imbalanceSizeReduction: 0.5,
+  skipRiskySideThreshold: 0.75,  // At 75%+ imbalance, don't quote risky side at all
   // Time-decay defaults
   expiryWidenStartSec: 3600,  // 1 hour before expiry
   expiryStopQuoteSec: 300,    // 5 minutes before expiry
@@ -271,8 +279,19 @@ export class AdaptiveStrategy extends BaseStrategy {
       askSize = 0;
     }
 
-    // Reduce size on "risky" side when imbalance is extreme
-    if (this.params.reduceRiskySideOnImbalance && Math.abs(currentImbalance) >= this.params.extremeImbalanceThreshold) {
+    // Skip risky side entirely when imbalance is VERY extreme
+    // This prevents getting stepped over in strongly trending markets
+    if (Math.abs(currentImbalance) >= this.params.skipRiskySideThreshold) {
+      // Positive imbalance (bullish) → SKIP selling (you'll get bought and price goes up)
+      // Negative imbalance (bearish) → SKIP buying (you'll get sold and price goes down)
+      if (currentImbalance > 0) {
+        askSize = 0; // Don't sell into a bullish market
+      } else {
+        bidSize = 0; // Don't buy into a bearish market
+      }
+    }
+    // Reduce size on "risky" side when imbalance is moderately extreme
+    else if (this.params.reduceRiskySideOnImbalance && Math.abs(currentImbalance) >= this.params.extremeImbalanceThreshold) {
       const reduction = this.params.imbalanceSizeReduction;
       
       // Positive imbalance (bullish) → risky to SELL (you'll get bought and price goes up)
@@ -409,6 +428,9 @@ export class AdaptiveStrategy extends BaseStrategy {
     }
     if (typeof params.imbalanceSizeReduction === "number") {
       this.params.imbalanceSizeReduction = params.imbalanceSizeReduction;
+    }
+    if (typeof params.skipRiskySideThreshold === "number") {
+      this.params.skipRiskySideThreshold = params.skipRiskySideThreshold;
     }
     // Time-decay params
     if (typeof params.expiryWidenStartSec === "number") {

@@ -36,6 +36,7 @@ strategy:
     extremeImbalanceThreshold: 0.6  # Imbalance level considered "extreme" (0-1)
     reduceRiskySideOnImbalance: true  # Reduce size on risky side when imbalance extreme
     imbalanceSizeReduction: 0.5  # Size multiplier on risky side (0.5 = 50%)
+    skipRiskySideThreshold: 0.75  # At 75%+ imbalance, DON'T quote risky side at all
     # Time-decay near expiry:
     expiryWidenStartSec: 3600  # Start widening spread 1 hour before expiry
     expiryStopQuoteSec: 300    # Stop quoting 5 minutes before expiry
