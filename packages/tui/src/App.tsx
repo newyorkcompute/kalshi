@@ -12,7 +12,6 @@ import { Positions } from './components/Positions.js';
 import { Arbitrage } from './components/Arbitrage.js';
 import { Footer } from './components/Footer.js';
 import { PriceChart } from './components/PriceChart.js';
-import { HelpOverlay } from './components/HelpOverlay.js';
 import { useKalshi } from './hooks/useKalshi.js';
 import { 
   loadConfig, 
@@ -28,7 +27,6 @@ export function App() {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [showHelp, setShowHelp] = useState(false);
   
   // Load config from disk on startup
   const [config, setConfig] = useState<TuiConfig>(() => loadConfig());
@@ -106,18 +104,6 @@ export function App() {
 
   // Handle keyboard input
   useInput((input, key) => {
-    // Toggle help overlay with '?' or 'h'
-    if (input === '?' || input === 'h') {
-      setShowHelp(prev => !prev);
-      return;
-    }
-
-    // When help is shown, any key closes it
-    if (showHelp) {
-      setShowHelp(false);
-      return;
-    }
-
     if (input === 'q') {
       exit();
     }
@@ -166,11 +152,6 @@ export function App() {
 
   // Get selected market for orderbook/chart
   const selectedMarket = markets[selectedIndex] ?? null;
-
-  // Show help overlay (with dimmed background pattern)
-  if (showHelp) {
-    return <HelpOverlay width={width} height={height} />;
-  }
 
   return (
     <Box flexDirection="column" width={width} height={height}>
