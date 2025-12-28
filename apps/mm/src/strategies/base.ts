@@ -24,6 +24,19 @@ export interface MarketSnapshot {
   position: Position | null;
   /** Time to market expiry (seconds) */
   timeToExpiry?: number;
+  
+  // === Enhanced market data (Phase 2) ===
+  
+  /** Microprice - size-weighted mid (better fair value estimate) */
+  microprice?: number;
+  /** Size at best bid */
+  bidSize?: number;
+  /** Size at best ask */
+  askSize?: number;
+  /** Orderbook imbalance: (bidDepth - askDepth) / (bidDepth + askDepth) */
+  imbalance?: number;
+  /** Is there adverse selection detected for this market? */
+  adverseSelection?: boolean;
 }
 
 /**

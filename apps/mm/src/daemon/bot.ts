@@ -49,6 +49,7 @@ interface FillData {
 import type { Config } from "../config.js";
 import { getKalshiCredentials, getBasePath } from "../config.js";
 import { createStrategy, type Strategy, type MarketSnapshot } from "../strategies/index.js";
+import { AdverseSelectionDetector, type FillRecord } from "../adverse-selection.js";
 
 export interface BotState {
   running: boolean;
@@ -84,6 +85,7 @@ export class Bot {
   private risk: RiskManager;
   private strategy: Strategy;
   private orderbookManager: OrderbookManager;
+  private adverseDetector: AdverseSelectionDetector;
 
   // Market state (legacy - kept for ticker fallback)
   private marketData: Map<string, { bestBid: number; bestAsk: number }> =
@@ -122,6 +124,7 @@ export class Bot {
     this.risk = new RiskManager(config.risk as RiskLimits);
     this.strategy = createStrategy(config.strategy);
     this.orderbookManager = new OrderbookManager();
+    this.adverseDetector = new AdverseSelectionDetector();
 
     console.log(`[Bot] Strategy: ${this.strategy.name}`);
     console.log(`[Bot] Mode: ${config.kalshi.demo ? "DEMO" : "PRODUCTION"}`);
@@ -282,6 +285,8 @@ export class Bot {
   getMetrics(): Record<string, number | string | boolean> {
     const state = this.getState();
     const latency = this.getLatencyStats();
+    const flaggedMarkets = this.adverseDetector.getFlaggedMarkets();
+    
     return {
       running: state.running,
       paused: state.paused,
@@ -297,6 +302,9 @@ export class Bot {
       latency_p95: latency.p95,
       latency_p99: latency.p99,
       latency_max: latency.max,
+      // Adverse selection
+      adverseFlagged: flaggedMarkets.length,
+      adverseMarkets: flaggedMarkets.join(",") || "none",
     };
   }
 
@@ -489,6 +497,19 @@ export class Bot {
       timestamp: new Date(),
     };
 
+    // Record for adverse selection tracking
+    const bbo = this.orderbookManager.getBBO(data.market_ticker);
+    const currentPrice = bbo?.midPrice ?? data.price;
+    
+    const fillRecord: FillRecord = {
+      ticker: data.market_ticker,
+      side: data.side,
+      action: data.action,
+      price: data.price,
+      timestamp: Date.now(),
+    };
+    this.adverseDetector.recordFill(fillRecord, currentPrice);
+
     // Get P&L BEFORE fill for comparison
     const pnlBefore = this.inventory.getPnLSummary();
 
@@ -538,7 +559,21 @@ export class Bot {
     const data = this.marketData.get(ticker);
     if (!data) return;
 
-    // Build market snapshot
+    // Get enhanced orderbook data
+    const ob = this.orderbookManager.getOrderbook(ticker);
+    const bbo = ob.getBBO();
+    const microprice = ob.getMicroprice();
+    const imbalance = ob.getImbalance();
+
+    // Check adverse selection
+    const adverseSelection = this.adverseDetector.isAdverse(ticker);
+    
+    // Update adverse detector with current price
+    if (bbo) {
+      this.adverseDetector.updatePrice(ticker, bbo.midPrice);
+    }
+
+    // Build market snapshot with enhanced data
     const position = this.inventory.getPosition(ticker) ?? null;
     const mid = (data.bestBid + data.bestAsk) / 2;
 
@@ -549,6 +584,12 @@ export class Bot {
       mid,
       spread: data.bestAsk - data.bestBid,
       position,
+      // Enhanced data (Phase 2)
+      microprice: microprice ?? undefined,
+      bidSize: bbo?.bidSize,
+      askSize: bbo?.askSize,
+      imbalance,
+      adverseSelection,
     };
 
     // Get quotes from strategy
@@ -564,7 +605,8 @@ export class Bot {
 
       try {
         await this.orderManager.updateQuote(quote);
-        console.log(`[Bot] 📝 Quote: ${quote.ticker} ${quote.bidSize}x@${quote.bidPrice}¢ / ${quote.askSize}x@${quote.askPrice}¢`);
+        const adverseTag = adverseSelection ? " [ADVERSE]" : "";
+        console.log(`[Bot] 📝 Quote: ${quote.ticker} ${quote.bidSize}x@${quote.bidPrice}¢ / ${quote.askSize}x@${quote.askPrice}¢${adverseTag}`);
       } catch (error) {
         console.error(`[Bot] ❌ Quote failed for ${ticker}:`, error);
       }

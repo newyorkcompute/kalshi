@@ -12,11 +12,24 @@ kalshi:
 
 # Strategy selection
 strategy:
-  name: symmetric  # or 'avellaneda'
+  name: adaptive  # 'symmetric', 'adaptive', or 'avellaneda'
   
   symmetric:
     spreadCents: 4        # Total spread (2¢ bid, 2¢ ask)
     sizePerSide: 10       # Contracts per side
+  
+  # RECOMMENDED: Adaptive strategy with Phase 2 enhancements
+  adaptive:
+    edgeCents: 1               # Quote 1¢ inside best bid/ask
+    minSpreadCents: 2          # Minimum profit margin
+    sizePerSide: 5             # Contracts per side
+    maxMarketSpread: 15        # Skip illiquid markets (spread > 15¢)
+    skewFactor: 0.5            # Inventory skew (higher = more aggressive)
+    maxInventorySkew: 30       # Stop adding to position at this level
+    # Phase 2 Elite MM options:
+    useMicroprice: true        # Use size-weighted mid as fair value
+    multiLevel: false          # Quote at multiple price levels
+    adverseSelectionMultiplier: 2.0  # Widen spread when being picked off
     
   avellaneda:
     gamma: 0.1            # Risk aversion (higher = wider spreads)
