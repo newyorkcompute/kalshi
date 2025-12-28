@@ -835,10 +835,11 @@ export class Bot {
     // Place quotes (risk check happens inside updateQuote)
     for (const quote of quotes) {
       // Apply drawdown scaling to sizes
+      // IMPORTANT: Preserve 0 sizes from strategy (skip risky side protection)
       const scaledQuote = {
         ...quote,
-        bidSize: Math.max(1, Math.floor(quote.bidSize * positionMultiplier)),
-        askSize: Math.max(1, Math.floor(quote.askSize * positionMultiplier)),
+        bidSize: quote.bidSize === 0 ? 0 : Math.max(1, Math.floor(quote.bidSize * positionMultiplier)),
+        askSize: quote.askSize === 0 ? 0 : Math.max(1, Math.floor(quote.askSize * positionMultiplier)),
       };
       
       // If multiplier is 0, skip quoting entirely
