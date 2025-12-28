@@ -291,5 +291,38 @@ describe("OrderbookManager", () => {
     expect(manager.getTickers()).toContain("MARKET-2");
     expect(manager.getTickers()).toHaveLength(2);
   });
+
+  it("should clear all orderbooks", () => {
+    manager.applySnapshot({
+      market_ticker: "MARKET-1",
+      market_id: "1",
+      yes: [[50, 10]],
+      no: [],
+    });
+
+    manager.clear();
+
+    expect(manager.getTickers()).toHaveLength(0);
+    expect(manager.getBBO("MARKET-1")).toBeNull();
+  });
+});
+
+describe("LocalOrderbook - clear", () => {
+  it("should clear all data", () => {
+    const orderbook = new LocalOrderbook("TEST");
+    orderbook.applySnapshot({
+      market_ticker: "TEST",
+      market_id: "123",
+      yes: [[50, 10]],
+      no: [[90, 15]],
+    });
+
+    expect(orderbook.getBBO()).not.toBeNull();
+
+    orderbook.clear();
+
+    expect(orderbook.getBBO()).toBeNull();
+    expect(orderbook.getSequence()).toBe(0);
+  });
 });
 
