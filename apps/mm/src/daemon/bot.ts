@@ -12,8 +12,11 @@ import {
   createOrdersApi,
   createMarketApi,
   createPortfolioApi,
+  OrderbookManager,
   type RiskLimits,
   type PnLSummary,
+  type OrderbookSnapshot,
+  type OrderbookDelta,
 } from "@newyorkcompute/kalshi-core";
 import type { MarketApi, PortfolioApi } from "kalshi-typescript";
 import { appendFileSync, existsSync, mkdirSync } from "fs";
@@ -80,10 +83,21 @@ export class Bot {
   private inventory: InventoryTracker;
   private risk: RiskManager;
   private strategy: Strategy;
+  private orderbookManager: OrderbookManager;
 
-  // Market state
+  // Market state (legacy - kept for ticker fallback)
   private marketData: Map<string, { bestBid: number; bestAsk: number }> =
     new Map();
+
+  // Latency tracking
+  private quoteLatencies: number[] = [];
+  private readonly MAX_LATENCY_SAMPLES = 100;
+
+  // Quote debouncing - prevent excessive API calls
+  private lastQuoteUpdate: Map<string, number> = new Map();
+  private lastBBO: Map<string, { bid: number; ask: number }> = new Map();
+  private readonly MIN_QUOTE_INTERVAL_MS = 500; // Don't update more than 2x/sec
+  private readonly MIN_PRICE_CHANGE = 1; // Only update if price moves 1¢+
 
   // Logging
   private logFile: string;
@@ -107,6 +121,7 @@ export class Bot {
     this.inventory = new InventoryTracker();
     this.risk = new RiskManager(config.risk as RiskLimits);
     this.strategy = createStrategy(config.strategy);
+    this.orderbookManager = new OrderbookManager();
 
     console.log(`[Bot] Strategy: ${this.strategy.name}`);
     console.log(`[Bot] Mode: ${config.kalshi.demo ? "DEMO" : "PRODUCTION"}`);
@@ -266,6 +281,7 @@ export class Bot {
    */
   getMetrics(): Record<string, number | string | boolean> {
     const state = this.getState();
+    const latency = this.getLatencyStats();
     return {
       running: state.running,
       paused: state.paused,
@@ -276,6 +292,11 @@ export class Bot {
       fillsToday: state.pnl.fillsToday,
       volumeToday: state.pnl.volumeToday,
       halted: state.risk.halted,
+      // Latency metrics
+      latency_p50: latency.p50,
+      latency_p95: latency.p95,
+      latency_p99: latency.p99,
+      latency_max: latency.max,
     };
   }
 
@@ -371,41 +392,71 @@ export class Bot {
     console.error("[Bot] WebSocket error:", error.message);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async onOrderbookSnapshot(data: any): Promise<void> {
+  private async onOrderbookSnapshot(data: OrderbookSnapshot): Promise<void> {
     const ticker = data.market_ticker;
     if (!ticker || !this.config.markets.includes(ticker)) return;
 
-    // Extract best bid/ask from full orderbook
-    // yes array: [[price, quantity], ...] - these are YES bids
-    // no array: [[price, quantity], ...] - these are NO bids (YES asks = 100 - NO bid)
-    const yesBids: [number, number][] = data.yes || [];
-    const noBids: [number, number][] = data.no || [];
+    // Apply snapshot to local orderbook
+    this.orderbookManager.applySnapshot(data);
 
-    // Best YES bid = highest price in yes array with quantity > 0
-    const activeBids = yesBids.filter((p) => p[1] > 0);
-    const bestBid = activeBids.length > 0 ? Math.max(...activeBids.map((p) => p[0])) : 0;
+    // Get BBO from local orderbook
+    const bbo = this.orderbookManager.getBBO(ticker);
+    if (!bbo) return;
 
-    // Best YES ask = 100 - highest NO bid (since NO bid of 90¢ = YES ask of 10¢)
-    const activeNoBids = noBids.filter((p) => p[1] > 0);
-    const bestNoPrice = activeNoBids.length > 0 ? Math.max(...activeNoBids.map((p) => p[0])) : 0;
-    const bestAsk = bestNoPrice > 0 ? 100 - bestNoPrice : 100;
+    const { bidPrice: bestBid, askPrice: bestAsk } = bbo;
 
-    console.log(`[Bot] Market: ${ticker} ${bestBid}¢/${bestAsk}¢ (spread ${bestAsk - bestBid}¢)`);
+    // Also get microprice for logging
+    const ob = this.orderbookManager.getOrderbook(ticker);
+    const microprice = ob.getMicroprice();
+    const imbalance = ob.getImbalance();
+
+    console.log(
+      `[Bot] 📊 ${ticker} ${bestBid}¢/${bestAsk}¢ (spread ${bbo.spread}¢) | ` +
+      `μ=${microprice?.toFixed(1)}¢ imb=${(imbalance * 100).toFixed(0)}%`
+    );
 
     if (this.paused || this.risk.shouldHalt()) return;
 
-    // Update market data
+    // Update legacy market data for backward compatibility
     this.marketData.set(ticker, { bestBid, bestAsk });
 
     // Generate and place quotes
     await this.updateQuotes(ticker);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async onOrderbookDelta(_data: any): Promise<void> {
-    // Delta updates are incremental - we rely on ticker updates for bid/ask
-    // In production, we'd maintain local orderbook state from deltas
+  private async onOrderbookDelta(data: OrderbookDelta): Promise<void> {
+    const ticker = data.market_ticker;
+    if (!ticker || !this.config.markets.includes(ticker)) return;
+
+    // Apply delta to local orderbook (FAST - no parsing needed)
+    this.orderbookManager.applyDelta(data);
+
+    // Skip if paused or halted
+    if (this.paused || this.risk.shouldHalt()) return;
+
+    // Get updated BBO
+    const bbo = this.orderbookManager.getBBO(ticker);
+    if (!bbo) return;
+
+    // Update legacy market data
+    this.marketData.set(ticker, { 
+      bestBid: bbo.bidPrice, 
+      bestAsk: bbo.askPrice 
+    });
+
+    // DEBOUNCE: Check if we should update quotes
+    if (!this.shouldUpdateQuotes(ticker, bbo.bidPrice, bbo.askPrice)) {
+      return; // Skip this update
+    }
+
+    // Update quotes
+    const startTime = Date.now();
+    await this.updateQuotes(ticker);
+    this.trackLatency(Date.now() - startTime);
+
+    // Record this update
+    this.lastQuoteUpdate.set(ticker, Date.now());
+    this.lastBBO.set(ticker, { bid: bbo.bidPrice, ask: bbo.askPrice });
   }
 
   private async onTicker(data: TickerData): Promise<void> {
@@ -522,6 +573,71 @@ export class Bot {
 
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Check if we should update quotes (debouncing + significant change detection)
+   */
+  private shouldUpdateQuotes(ticker: string, newBid: number, newAsk: number): boolean {
+    const now = Date.now();
+    const lastUpdate = this.lastQuoteUpdate.get(ticker) ?? 0;
+    const lastPrices = this.lastBBO.get(ticker);
+
+    // Always update if it's been a while
+    if (now - lastUpdate > this.MIN_QUOTE_INTERVAL_MS * 2) {
+      return true;
+    }
+
+    // Check time-based debounce
+    if (now - lastUpdate < this.MIN_QUOTE_INTERVAL_MS) {
+      // Too soon - but check if price moved significantly
+      if (lastPrices) {
+        const bidChange = Math.abs(newBid - lastPrices.bid);
+        const askChange = Math.abs(newAsk - lastPrices.ask);
+        
+        // Only update if price moved significantly
+        if (bidChange >= this.MIN_PRICE_CHANGE || askChange >= this.MIN_PRICE_CHANGE) {
+          return true;
+        }
+      }
+      return false; // Skip - too soon and no significant change
+    }
+
+    return true; // Enough time has passed
+  }
+
+  /**
+   * Track quote update latency
+   */
+  private trackLatency(ms: number): void {
+    this.quoteLatencies.push(ms);
+    if (this.quoteLatencies.length > this.MAX_LATENCY_SAMPLES) {
+      this.quoteLatencies.shift();
+    }
+    
+    // Warn on very slow updates (Kalshi API typically 150-250ms)
+    if (ms > 400) {
+      console.warn(`[Bot] ⚠️ Slow quote update: ${ms}ms`);
+    }
+  }
+
+  /**
+   * Get latency statistics
+   */
+  getLatencyStats(): { p50: number; p95: number; p99: number; max: number } {
+    if (this.quoteLatencies.length === 0) {
+      return { p50: 0, p95: 0, p99: 0, max: 0 };
+    }
+    
+    const sorted = [...this.quoteLatencies].sort((a, b) => a - b);
+    const len = sorted.length;
+    
+    return {
+      p50: sorted[Math.floor(len * 0.5)] ?? 0,
+      p95: sorted[Math.floor(len * 0.95)] ?? 0,
+      p99: sorted[Math.floor(len * 0.99)] ?? 0,
+      max: sorted[len - 1] ?? 0,
+    };
   }
 
   /**

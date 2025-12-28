@@ -86,6 +86,8 @@ export {
   OrderManager,
   InventoryTracker,
   RiskManager,
+  LocalOrderbook,
+  OrderbookManager,
   DEFAULT_RISK_LIMITS,
   type Side,
   type Action,
@@ -99,4 +101,8 @@ export {
   type PnLSummary,
   type CreateOrderInput,
   type PlaceOrderResult,
+  type PriceLevel,
+  type OrderbookSnapshot,
+  type OrderbookDelta,
+  type BBO,
 } from "./mm/index.js";

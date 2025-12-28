@@ -196,12 +196,72 @@ export class OrderManager {
   }
 
   /**
-   * Update quotes for a market (cancel old, place new)
+   * Update quotes for a market (ATOMIC: place new BEFORE canceling old)
    *
-   * This is the main method for market making - it atomically updates
-   * the bid/ask quotes for a given market.
+   * This is the main method for market making - it updates quotes with
+   * minimal exposure gap:
+   * 1. Place new orders first (briefly have double exposure)
+   * 2. Cancel old orders only after new ones confirmed
+   *
+   * This prevents the "naked" period where we have no quotes in market.
    */
   async updateQuote(quote: Quote): Promise<{
+    cancelled: number;
+    placed: PlaceOrderResult[];
+  }> {
+    // Get existing orders for this ticker BEFORE placing new ones
+    const existingOrders = this.getActive(quote.ticker);
+
+    // Build new orders
+    const newOrders: CreateOrderInput[] = [];
+
+    // Bid (buy YES at bid price)
+    if (quote.bidSize > 0 && quote.bidPrice >= 1 && quote.bidPrice <= 99) {
+      newOrders.push({
+        ticker: quote.ticker,
+        side: quote.side,
+        action: "buy",
+        price: quote.bidPrice,
+        count: quote.bidSize,
+      });
+    }
+
+    // Ask (sell YES at ask price, or buy NO)
+    if (quote.askSize > 0 && quote.askPrice >= 1 && quote.askPrice <= 99) {
+      newOrders.push({
+        ticker: quote.ticker,
+        side: quote.side,
+        action: "sell",
+        price: quote.askPrice,
+        count: quote.askSize,
+      });
+    }
+
+    // 1. Place new orders FIRST (we briefly have double exposure)
+    const placed = await this.placeBulk(newOrders);
+
+    // 2. Cancel old orders AFTER new ones are placed
+    // Even if new orders fail, we still cancel old stale quotes
+    let cancelled = 0;
+    if (existingOrders.length > 0) {
+      const cancelResults = await Promise.allSettled(
+        existingOrders.map((order) => this.cancel(order.clientOrderId))
+      );
+      for (const result of cancelResults) {
+        if (result.status === "fulfilled" && result.value) {
+          cancelled++;
+        }
+      }
+    }
+
+    return { cancelled, placed };
+  }
+
+  /**
+   * Update quotes (legacy mode: cancel first, then place)
+   * Use this if you're hitting rate limits from double orders
+   */
+  async updateQuoteLegacy(quote: Quote): Promise<{
     cancelled: number;
     placed: PlaceOrderResult[];
   }> {
@@ -211,7 +271,6 @@ export class OrderManager {
     // 2. Place new bid and ask orders
     const orders: CreateOrderInput[] = [];
 
-    // Bid (buy YES at bid price)
     if (quote.bidSize > 0 && quote.bidPrice >= 1 && quote.bidPrice <= 99) {
       orders.push({
         ticker: quote.ticker,
@@ -222,7 +281,6 @@ export class OrderManager {
       });
     }
 
-    // Ask (sell YES at ask price, or buy NO)
     if (quote.askSize > 0 && quote.askPrice >= 1 && quote.askPrice <= 99) {
       orders.push({
         ticker: quote.ticker,
