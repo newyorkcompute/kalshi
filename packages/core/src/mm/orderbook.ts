@@ -74,17 +74,21 @@ export class LocalOrderbook {
     this.yesBids.clear();
     this.noBids.clear();
 
-    // Load YES bids
-    for (const [price, qty] of snapshot.yes) {
-      if (qty > 0) {
-        this.yesBids.set(price, qty);
+    // Load YES bids (defensive check for empty/invalid snapshots from finalized markets)
+    if (Array.isArray(snapshot.yes)) {
+      for (const [price, qty] of snapshot.yes) {
+        if (qty > 0) {
+          this.yesBids.set(price, qty);
+        }
       }
     }
 
     // Load NO bids
-    for (const [price, qty] of snapshot.no) {
-      if (qty > 0) {
-        this.noBids.set(price, qty);
+    if (Array.isArray(snapshot.no)) {
+      for (const [price, qty] of snapshot.no) {
+        if (qty > 0) {
+          this.noBids.set(price, qty);
+        }
       }
     }
 
