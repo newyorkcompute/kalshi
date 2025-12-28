@@ -4,12 +4,7 @@
  */
 
 import { Box, useApp, useInput, useStdout } from 'ink';
-import { useState, useEffect, useMemo } from 'react';
-
-/** Available sort options for markets list */
-export type SortOption = 'volume' | 'volume_24h' | 'open_interest' | 'price';
-
-const SORT_OPTIONS: SortOption[] = ['volume', 'volume_24h', 'open_interest', 'price'];
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Header } from './components/Header.js';
 import { Markets } from './components/Markets.js';
 import { Orderbook } from './components/Orderbook.js';
@@ -18,12 +13,32 @@ import { Arbitrage } from './components/Arbitrage.js';
 import { Footer } from './components/Footer.js';
 import { PriceChart } from './components/PriceChart.js';
 import { useKalshi } from './hooks/useKalshi.js';
+import { 
+  loadConfig, 
+  saveConfig, 
+  toggleFavorite, 
+  type SortOption, 
+  type TuiConfig 
+} from './config.js';
+
+const SORT_OPTIONS: SortOption[] = ['volume', 'volume_24h', 'open_interest', 'price'];
 
 export function App() {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [sortOption, setSortOption] = useState<SortOption>('volume');
+  
+  // Load config from disk on startup
+  const [config, setConfig] = useState<TuiConfig>(() => loadConfig());
+  
+  // Save config whenever it changes
+  const updateConfig = useCallback((updates: Partial<TuiConfig>) => {
+    setConfig(prev => {
+      const newConfig = { ...prev, ...updates };
+      saveConfig(newConfig);
+      return newConfig;
+    });
+  }, []);
 
   // Get terminal dimensions
   const width = stdout?.columns ?? 120;
@@ -47,10 +62,12 @@ export function App() {
     arbitrage,
   } = useKalshi();
 
-  // Sort markets based on selected option
+  // Sort markets based on selected option, with favorites first
   const markets = useMemo(() => {
     const sorted = [...rawMarkets];
-    switch (sortOption) {
+    
+    // First sort by the selected option
+    switch (config.sortBy) {
       case 'volume':
         sorted.sort((a, b) => (b.volume || 0) - (a.volume || 0));
         break;
@@ -64,8 +81,18 @@ export function App() {
         sorted.sort((a, b) => (b.yes_bid || 0) - (a.yes_bid || 0));
         break;
     }
+    
+    // Then put favorites at top if enabled
+    if (config.favoritesFirst && config.favorites.length > 0) {
+      sorted.sort((a, b) => {
+        const aFav = config.favorites.includes(a.ticker) ? 1 : 0;
+        const bFav = config.favorites.includes(b.ticker) ? 1 : 0;
+        return bFav - aFav; // Favorites first
+      });
+    }
+    
     return sorted;
-  }, [rawMarkets, sortOption]);
+  }, [rawMarkets, config.sortBy, config.favorites, config.favoritesFirst]);
 
   // Update orderbook when selection changes
   useEffect(() => {
@@ -83,13 +110,21 @@ export function App() {
 
     // Cycle sort option with 's' key
     if (input === 's') {
-      setSortOption(current => {
-        const currentIndex = SORT_OPTIONS.indexOf(current);
-        const nextIndex = (currentIndex + 1) % SORT_OPTIONS.length;
-        return SORT_OPTIONS[nextIndex];
-      });
+      const currentIndex = SORT_OPTIONS.indexOf(config.sortBy);
+      const nextIndex = (currentIndex + 1) % SORT_OPTIONS.length;
+      updateConfig({ sortBy: SORT_OPTIONS[nextIndex] });
       // Reset selection to top when sort changes
       setSelectedIndex(0);
+    }
+
+    // Toggle favorite with 'f' key
+    if (input === 'f') {
+      const selectedTicker = markets[selectedIndex]?.ticker;
+      if (selectedTicker) {
+        updateConfig({ 
+          favorites: toggleFavorite(config.favorites, selectedTicker) 
+        });
+      }
     }
 
     if (key.upArrow) {
@@ -140,7 +175,8 @@ export function App() {
             selectedIndex={selectedIndex}
             height={marketsHeight}
             isLoading={loading.markets}
-            sortBy={sortOption}
+            sortBy={config.sortBy}
+            favorites={config.favorites}
           />
           <Arbitrage
             opportunities={arbitrage}

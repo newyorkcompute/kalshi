@@ -2,7 +2,7 @@
 
 > Comprehensive list of improvements, features, and technical debt for the @newyorkcompute/kalshi monorepo.
 > 
-> Last updated: December 26, 2025
+> Last updated: December 28, 2025
 
 ## Legend
 
@@ -11,64 +11,16 @@
 - ✅ Done
 - ❌ Won't do
 
----
-
-## Repo Admin
-
-| Status | Priority | Item | Description |
-|--------|----------|------|-------------|
-| ⬜ | High | Branch protection rules | Require CI pass, reviews before merge to main |
-| ⬜ | Medium | `.nvmrc` / `.node-version` | Pin Node version (20) for contributors |
-| ⬜ | Medium | Tune Dependabot | Configure update schedule, ignore patterns |
-| ⬜ | Medium | GitHub Releases | Auto-create releases with changelogs on npm publish |
-| ⬜ | Low | CODEOWNERS | Auto-assign reviewers by path |
-| ⬜ | Low | npm provenance | Supply chain security for published packages |
-
----
-
-## Developer Experience
-
-| Status | Priority | Item | Description |
-|--------|----------|------|-------------|
-| ⬜ | Medium | Pre-commit hooks | Husky + lint-staged for auto-lint/format |
-| ⬜ | Low | Prettier | Consistent code formatting across packages |
-| ⬜ | Low | `npm run dev` at root | Watch mode for all packages |
-| ⬜ | Low | VSCode workspace settings | `.vscode/settings.json` for team consistency |
-| ⬜ | Low | Docker support | Dockerfile for MCP server deployment |
-
----
-
-## Testing
-
-| Status | Priority | Item | Description |
-|--------|----------|------|-------------|
-| ⬜ | Medium | Code coverage reports | Track coverage in CI, upload to Codecov/Coveralls |
-| ⬜ | Low | Coverage thresholds | Enforce minimum coverage (e.g., 80%) |
-| ⬜ | Low | E2E tests | Integration tests against Kalshi demo API |
-| ⬜ | Low | TUI snapshot tests | Catch UI regressions with ink-testing-library |
-
----
-
-## CI/CD
-
-| Status | Priority | Item | Description |
-|--------|----------|------|-------------|
-| ⬜ | High | Use `nx affected` | Only run tasks on changed packages (faster CI) |
-| ⬜ | Medium | Cache npm dependencies | Speed up CI with `actions/cache` |
-| ⬜ | Low | Matrix builds | Test on Node 18, 20, 22 |
-| ⬜ | Low | Publish dry-run on PR | Verify packages are publishable before merge |
-
----
 
 ## kalshi-core Features
 
 | Status | Priority | Item | Description |
 |--------|----------|------|-------------|
-| ⬜ | High | WebSocket support | Real-time price updates, orderbook streaming |
+| ✅ | High | WebSocket support | Real-time price updates, orderbook streaming |
 | ⬜ | Medium | Market search helpers | Filter by category, series, keyword, volume |
-| ⬜ | Medium | Position P&L calculator | Calculate unrealized P&L from positions |
+| ✅ | Medium | Position P&L calculator | Calculate unrealized P&L from positions |
 | ⬜ | Low | Order builder pattern | Fluent API: `Order.buy('YES').at(50).quantity(10)` |
-| ⬜ | Low | Retry logic wrapper | Automatic retry with backoff for API calls |
+| ✅ | Low | Retry logic wrapper | Automatic retry with backoff for API calls |
 
 ---
 
@@ -85,7 +37,7 @@
 | ⬜ | Medium | Config file | `~/.kalshi-tui/config.json` for preferences |
 | ⬜ | Low | Notifications/alerts | Alert on price thresholds |
 | ⬜ | Low | Position P&L display | Show profit/loss on positions |
-| ⬜ | Low | Sort toggle | Press `s` to cycle sort: volume → 24h → OI |
+| ✅ | Low | Sort toggle | Press `s` to cycle sort: volume → 24h → OI |
 
 ---
 
@@ -93,10 +45,10 @@
 
 | Status | Priority | Item | Description |
 |--------|----------|------|-------------|
-| ⬜ | Medium | Batch operations | Get multiple markets/events in one call |
+| ✅ | Medium | Batch operations | batch_cancel_orders, get_fills, get_settlements |
 | ⬜ | Medium | Trade confirmation | Require explicit confirmation for orders |
 | ⬜ | Low | Market recommendations | "Interesting markets" based on volume, spread |
-| ⬜ | Low | Account history | Recent trades, deposits, withdrawals |
+| ✅ | Low | Account history | get_fills, get_settlements tools |
 | ⬜ | Low | Portfolio analytics | Summary stats, best/worst performers |
 
 ---
@@ -117,6 +69,18 @@
 
 | Date | Item | PR |
 |------|------|----|
+| 2025-12-28 | TUI sort toggle (s key) | #63 |
+| 2025-12-28 | Remove Smithery references | #62 |
+| 2025-12-28 | Upgrade to Node 22 LTS | #61 |
+| 2025-12-28 | MCP tools: get_fills, batch_cancel_orders, get_settlements | #59 |
+| 2025-12-28 | Market maker daemon with adaptive strategy | #57 |
+| 2025-12-27 | WebSocket support for real-time data | #53 |
+| 2025-12-27 | Arbitrage scanner in TUI | #51 |
+| 2025-12-27 | Dependency audit | #49 |
+| 2025-12-27 | JSDoc documentation | #47 |
+| 2025-12-27 | NX affected + CI caching | #45 |
+| 2025-12-27 | Test coverage boost + TUI snapshot tests | #44 |
+| 2025-12-27 | Codecov integration | #43 |
 | 2025-12-26 | Enhanced orderbook (mid price, depth, imbalance) | #35 |
 | 2025-12-26 | Market metrics (24h volume, open interest) | #37 |
 | 2025-12-26 | Core utilities (cache, rate limiter, formatExpiry) | #39 |

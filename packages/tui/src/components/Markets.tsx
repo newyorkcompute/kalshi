@@ -6,6 +6,7 @@
 import { Box, Text } from 'ink';
 import { formatExpiry, getPriceChange, formatPrice, formatVolume } from '../utils.js';
 import { Spinner } from './Spinner.js';
+import type { SortOption } from '../config.js';
 
 interface Market {
   ticker: string;
@@ -20,17 +21,16 @@ interface Market {
   previousYesBid?: number;
 }
 
-type SortOption = 'volume' | 'volume_24h' | 'open_interest' | 'price';
-
 interface MarketsProps {
   markets: Market[];
   selectedIndex: number;
   height: number;
   isLoading?: boolean;
   sortBy?: SortOption;
+  favorites?: string[];
 }
 
-export function Markets({ markets, selectedIndex, height, isLoading, sortBy = 'volume' }: MarketsProps) {
+export function Markets({ markets, selectedIndex, height, isLoading, sortBy = 'volume', favorites = [] }: MarketsProps) {
   // Calculate visible window (scroll with selection)
   const visibleRows = height - 4; // Border + title + padding
   const halfWindow = Math.floor(visibleRows / 2);
@@ -71,6 +71,7 @@ export function Markets({ markets, selectedIndex, height, isLoading, sortBy = 'v
           visibleMarkets.map((market, i) => {
             const actualIndex = startIndex + i;
             const isSelected = actualIndex === selectedIndex;
+            const isFavorite = favorites.includes(market.ticker);
             const priceChange = getPriceChange(market.yes_bid, market.previousYesBid);
             const expiry = formatExpiry(market.close_time);
             
@@ -78,13 +79,16 @@ export function Markets({ markets, selectedIndex, height, isLoading, sortBy = 'v
               <Box key={market.ticker} justifyContent="space-between">
                 <Box>
                   <Text color={isSelected ? 'green' : 'gray'}>
-                    {isSelected ? '▶ ' : '  '}
+                    {isSelected ? '▶' : ' '}
+                  </Text>
+                  <Text color="yellow">
+                    {isFavorite ? '★' : ' '}
                   </Text>
                   <Text 
                     color={isSelected ? 'green' : 'white'} 
                     bold={isSelected}
                   >
-                    {market.ticker.slice(0, 22)}
+                    {market.ticker.slice(0, 21)}
                   </Text>
                 </Box>
                 <Box>
