@@ -4,7 +4,12 @@
  */
 
 import { Box, useApp, useInput, useStdout } from 'ink';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+
+/** Available sort options for markets list */
+export type SortOption = 'volume' | 'volume_24h' | 'open_interest' | 'price';
+
+const SORT_OPTIONS: SortOption[] = ['volume', 'volume_24h', 'open_interest', 'price'];
 import { Header } from './components/Header.js';
 import { Markets } from './components/Markets.js';
 import { Orderbook } from './components/Orderbook.js';
@@ -18,6 +23,7 @@ export function App() {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [sortOption, setSortOption] = useState<SortOption>('volume');
 
   // Get terminal dimensions
   const width = stdout?.columns ?? 120;
@@ -25,7 +31,7 @@ export function App() {
 
   // Fetch data from Kalshi
   const { 
-    markets, 
+    markets: rawMarkets, 
     orderbook, 
     balance, 
     positions, 
@@ -41,6 +47,26 @@ export function App() {
     arbitrage,
   } = useKalshi();
 
+  // Sort markets based on selected option
+  const markets = useMemo(() => {
+    const sorted = [...rawMarkets];
+    switch (sortOption) {
+      case 'volume':
+        sorted.sort((a, b) => (b.volume || 0) - (a.volume || 0));
+        break;
+      case 'volume_24h':
+        sorted.sort((a, b) => (b.volume_24h || 0) - (a.volume_24h || 0));
+        break;
+      case 'open_interest':
+        sorted.sort((a, b) => (b.open_interest || 0) - (a.open_interest || 0));
+        break;
+      case 'price':
+        sorted.sort((a, b) => (b.yes_bid || 0) - (a.yes_bid || 0));
+        break;
+    }
+    return sorted;
+  }, [rawMarkets, sortOption]);
+
   // Update orderbook when selection changes
   useEffect(() => {
     const ticker = markets[selectedIndex]?.ticker;
@@ -53,6 +79,17 @@ export function App() {
   useInput((input, key) => {
     if (input === 'q') {
       exit();
+    }
+
+    // Cycle sort option with 's' key
+    if (input === 's') {
+      setSortOption(current => {
+        const currentIndex = SORT_OPTIONS.indexOf(current);
+        const nextIndex = (currentIndex + 1) % SORT_OPTIONS.length;
+        return SORT_OPTIONS[nextIndex];
+      });
+      // Reset selection to top when sort changes
+      setSelectedIndex(0);
     }
 
     if (key.upArrow) {
@@ -103,6 +140,7 @@ export function App() {
             selectedIndex={selectedIndex}
             height={marketsHeight}
             isLoading={loading.markets}
+            sortBy={sortOption}
           />
           <Arbitrage
             opportunities={arbitrage}

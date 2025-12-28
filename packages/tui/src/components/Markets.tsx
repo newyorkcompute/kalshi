@@ -20,14 +20,17 @@ interface Market {
   previousYesBid?: number;
 }
 
+type SortOption = 'volume' | 'volume_24h' | 'open_interest' | 'price';
+
 interface MarketsProps {
   markets: Market[];
   selectedIndex: number;
   height: number;
   isLoading?: boolean;
+  sortBy?: SortOption;
 }
 
-export function Markets({ markets, selectedIndex, height, isLoading }: MarketsProps) {
+export function Markets({ markets, selectedIndex, height, isLoading, sortBy = 'volume' }: MarketsProps) {
   // Calculate visible window (scroll with selection)
   const visibleRows = height - 4; // Border + title + padding
   const halfWindow = Math.floor(visibleRows / 2);
@@ -50,11 +53,11 @@ export function Markets({ markets, selectedIndex, height, isLoading }: MarketsPr
       <Box paddingX={1} justifyContent="space-between">
         <Text color="green" bold> MARKETS </Text>
         <Box>
-          <Text color="cyan" dimColor>{'   Vol'}</Text>
-          <Text color="gray" dimColor>{'   24h'}</Text>
-          <Text color="magenta" dimColor>{'    OI'}</Text>
+          <Text color={sortBy === 'volume' ? 'cyan' : 'gray'} bold={sortBy === 'volume'} dimColor={sortBy !== 'volume'}>{'   Vol'}</Text>
+          <Text color={sortBy === 'volume_24h' ? 'yellow' : 'gray'} bold={sortBy === 'volume_24h'} dimColor={sortBy !== 'volume_24h'}>{'   24h'}</Text>
+          <Text color={sortBy === 'open_interest' ? 'magenta' : 'gray'} bold={sortBy === 'open_interest'} dimColor={sortBy !== 'open_interest'}>{'    OI'}</Text>
           <Text color="gray" dimColor>{'    Exp'}</Text>
-          <Text color="white" dimColor>{' Price'}</Text>
+          <Text color={sortBy === 'price' ? 'green' : 'gray'} bold={sortBy === 'price'} dimColor={sortBy !== 'price'}>{' Price'}</Text>
         </Box>
       </Box>
 
