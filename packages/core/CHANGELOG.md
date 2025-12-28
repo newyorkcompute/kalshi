@@ -1,5 +1,11 @@
 # @newyorkcompute/kalshi-core
 
+## 0.5.2
+
+### Patch Changes
+
+- [#77](https://github.com/newyorkcompute/kalshi/pull/77) [`8844421`](https://github.com/newyorkcompute/kalshi/commit/88444218ec5b77dc6cadc02a2dc19d2eb7123ec8) Thanks [@siddharthkul](https://github.com/siddharthkul)! - Fix WebSocket FillMessage type to use correct Kalshi API fields (yes_price/no_price instead of price)
+
 ## 0.5.1
 
 ### Patch Changes
