@@ -98,7 +98,7 @@ export class Bot {
   // Quote debouncing - prevent excessive API calls
   private lastQuoteUpdate: Map<string, number> = new Map();
   private lastBBO: Map<string, { bid: number; ask: number }> = new Map();
-  private readonly MIN_QUOTE_INTERVAL_MS = 500; // Don't update more than 2x/sec
+  private readonly MIN_QUOTE_INTERVAL_MS = 1000; // Don't update more than 1x/sec per market
   private readonly MIN_PRICE_CHANGE = 1; // Only update if price moves 1¢+
 
   // Logging
@@ -428,8 +428,19 @@ export class Bot {
     // Update legacy market data for backward compatibility
     this.marketData.set(ticker, { bestBid, bestAsk });
 
+    // DEBOUNCE: Check if we should update quotes
+    if (!this.shouldUpdateQuotes(ticker, bestBid, bestAsk)) {
+      return; // Skip this update - too soon or no significant change
+    }
+
     // Generate and place quotes
+    const startTime = Date.now();
     await this.updateQuotes(ticker);
+    this.trackLatency(Date.now() - startTime);
+
+    // Record this update
+    this.lastQuoteUpdate.set(ticker, Date.now());
+    this.lastBBO.set(ticker, { bid: bestBid, ask: bestAsk });
   }
 
   private async onOrderbookDelta(data: OrderbookDelta): Promise<void> {
@@ -476,14 +487,25 @@ export class Bot {
     // Skip if paused or halted
     if (this.paused || this.risk.shouldHalt()) return;
 
+    const bestBid = data.yes_bid ?? 0;
+    const bestAsk = data.yes_ask ?? 0;
+
     // Update market data
-    this.marketData.set(ticker, {
-      bestBid: data.yes_bid ?? 0,
-      bestAsk: data.yes_ask ?? 0,
-    });
+    this.marketData.set(ticker, { bestBid, bestAsk });
+
+    // DEBOUNCE: Check if we should update quotes
+    if (!this.shouldUpdateQuotes(ticker, bestBid, bestAsk)) {
+      return; // Skip this update - too soon or no significant change
+    }
 
     // Generate and place quotes
+    const startTime = Date.now();
     await this.updateQuotes(ticker);
+    this.trackLatency(Date.now() - startTime);
+
+    // Record this update
+    this.lastQuoteUpdate.set(ticker, Date.now());
+    this.lastBBO.set(ticker, { bid: bestBid, ask: bestAsk });
   }
 
   private async onFill(data: FillData): Promise<void> {
