@@ -6,9 +6,11 @@
 
 export { type Strategy, type MarketSnapshot, BaseStrategy } from "./base.js";
 export { SymmetricStrategy, type SymmetricParams } from "./symmetric.js";
+export { AdaptiveStrategy, type AdaptiveParams } from "./adaptive.js";
 
 import type { Strategy } from "./base.js";
 import { SymmetricStrategy } from "./symmetric.js";
+import { AdaptiveStrategy } from "./adaptive.js";
 import type { StrategyConfig } from "../config.js";
 
 /**
@@ -18,6 +20,9 @@ export function createStrategy(config: StrategyConfig): Strategy {
   switch (config.name) {
     case "symmetric":
       return new SymmetricStrategy(config.symmetric);
+
+    case "adaptive":
+      return new AdaptiveStrategy(config.adaptive);
 
     case "avellaneda":
       // TODO: Implement Avellaneda-Stoikov strategy

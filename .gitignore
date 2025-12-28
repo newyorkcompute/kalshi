@@ -18,12 +18,16 @@ Thumbs.db
 
 # Logs
 *.log
+logs/
 npm-debug.log*
 
 # Environment
 .env
 .env.local
 .env.*.local
+
+# Market Maker config (contains local settings)
+apps/mm/config.yaml
 
 # NX
 .nx/

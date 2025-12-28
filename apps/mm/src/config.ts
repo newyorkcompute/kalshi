@@ -28,6 +28,13 @@ const SymmetricStrategySchema = z.object({
   sizePerSide: z.number().min(1).max(100).default(10),
 });
 
+const AdaptiveStrategySchema = z.object({
+  edgeCents: z.number().min(0).max(10).default(1),
+  minSpreadCents: z.number().min(1).max(20).default(2),
+  sizePerSide: z.number().min(1).max(100).default(5),
+  maxMarketSpread: z.number().min(5).max(50).default(20),
+});
+
 const AvellanedaStrategySchema = z.object({
   gamma: z.number().min(0.01).max(10).default(0.1),
   k: z.number().min(0.1).max(10).default(1.5),
@@ -36,8 +43,9 @@ const AvellanedaStrategySchema = z.object({
 });
 
 const StrategyConfigSchema = z.object({
-  name: z.enum(["symmetric", "avellaneda"]).default("symmetric"),
+  name: z.enum(["symmetric", "adaptive", "avellaneda"]).default("symmetric"),
   symmetric: SymmetricStrategySchema.default({}),
+  adaptive: AdaptiveStrategySchema.default({}),
   avellaneda: AvellanedaStrategySchema.default({}),
 });
 
@@ -110,7 +118,7 @@ export function getKalshiCredentials(): {
   privateKey: string;
 } {
   const apiKey = process.env.KALSHI_API_KEY;
-  const privateKey = process.env.KALSHI_PRIVATE_KEY;
+  let privateKey = process.env.KALSHI_PRIVATE_KEY;
 
   if (!apiKey) {
     throw new Error("KALSHI_API_KEY environment variable is required");
@@ -118,6 +126,12 @@ export function getKalshiCredentials(): {
 
   if (!privateKey) {
     throw new Error("KALSHI_PRIVATE_KEY environment variable is required");
+  }
+
+  // Handle escaped newlines from .env files
+  // e.g., "-----BEGIN PRIVATE KEY-----\nABC...\n-----END PRIVATE KEY-----"
+  if (privateKey.includes("\\n")) {
+    privateKey = privateKey.replace(/\\n/g, "\n");
   }
 
   return { apiKey, privateKey };

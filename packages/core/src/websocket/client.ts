@@ -298,6 +298,10 @@ export class KalshiWsClient {
           );
           break;
 
+        case 'orderbook_snapshot':
+          this.handlers.onOrderbookSnapshot?.(message.msg);
+          break;
+
         case 'orderbook_delta':
           this.handlers.onOrderbookDelta?.(message.msg);
           break;
@@ -312,6 +316,10 @@ export class KalshiWsClient {
 
         case 'fill':
           this.handlers.onFill?.(message.msg);
+          break;
+          
+        // Ignore ok, unsubscribed, and other operational messages
+        default:
           break;
       }
     } catch (error) {

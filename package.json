@@ -17,6 +17,7 @@
     "node": ">=18.0.0"
   },
   "scripts": {
+    "ci": "nx run-many -t build lint test typecheck",
     "build": "nx run-many -t build",
     "typecheck": "nx run-many -t typecheck",
     "lint": "nx run-many -t lint",
