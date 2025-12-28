@@ -1,6 +1,6 @@
 {
   "name": "@newyorkcompute/kalshi-mcp",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "MCP server for Kalshi prediction markets — enables AI agents to interact with Kalshi",
   "author": "NewYorkCompute",
   "license": "MIT",

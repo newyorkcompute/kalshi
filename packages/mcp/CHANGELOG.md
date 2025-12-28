@@ -1,5 +1,15 @@
 # @newyorkcompute/kalshi-mcp
 
+## 0.5.0
+
+### Minor Changes
+
+- [#59](https://github.com/newyorkcompute/kalshi/pull/59) [`1f2c7b4`](https://github.com/newyorkcompute/kalshi/commit/1f2c7b46c83cbb0af8be66278099ed5b0b60af84) Thanks [@siddharthkul](https://github.com/siddharthkul)! - Add new MCP tools for fills, batch cancel, and settlements
+
+  - **get_fills**: Get your fill (executed trade) history with filtering by ticker, order ID, and timestamps
+  - **batch_cancel_orders**: Cancel up to 20 orders at once in a single request
+  - **get_settlements**: Get your settlement history with market outcomes and payout details
+
 ## 0.4.0
 
 ### Minor Changes
