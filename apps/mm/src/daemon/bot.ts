@@ -100,6 +100,10 @@ export class Bot {
   private lastBBO: Map<string, { bid: number; ask: number }> = new Map();
   private readonly MIN_QUOTE_INTERVAL_MS = 1000; // Don't update more than 1x/sec per market
   private readonly MIN_PRICE_CHANGE = 1; // Only update if price moves 1¢+
+  
+  // Global rate limiter - prevents burst of API calls across all markets
+  private lastGlobalApiCall: number = 0;
+  private readonly MIN_GLOBAL_API_INTERVAL_MS = 200; // Max 5 API calls/sec total
 
   // Logging
   private logFile: string;
@@ -644,15 +648,22 @@ export class Bot {
    */
   private shouldUpdateQuotes(ticker: string, newBid: number, newAsk: number): boolean {
     const now = Date.now();
+    
+    // GLOBAL rate limit - prevent burst of API calls across all markets
+    if (now - this.lastGlobalApiCall < this.MIN_GLOBAL_API_INTERVAL_MS) {
+      return false; // Too many API calls globally
+    }
+    
     const lastUpdate = this.lastQuoteUpdate.get(ticker) ?? 0;
     const lastPrices = this.lastBBO.get(ticker);
 
-    // Always update if it's been a while
+    // Always update if it's been a while for this specific market
     if (now - lastUpdate > this.MIN_QUOTE_INTERVAL_MS * 2) {
+      this.lastGlobalApiCall = now; // Mark global API call
       return true;
     }
 
-    // Check time-based debounce
+    // Check time-based debounce for this market
     if (now - lastUpdate < this.MIN_QUOTE_INTERVAL_MS) {
       // Too soon - but check if price moved significantly
       if (lastPrices) {
@@ -661,12 +672,14 @@ export class Bot {
         
         // Only update if price moved significantly
         if (bidChange >= this.MIN_PRICE_CHANGE || askChange >= this.MIN_PRICE_CHANGE) {
+          this.lastGlobalApiCall = now; // Mark global API call
           return true;
         }
       }
       return false; // Skip - too soon and no significant change
     }
 
+    this.lastGlobalApiCall = now; // Mark global API call
     return true; // Enough time has passed
   }
 
