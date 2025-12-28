@@ -230,6 +230,64 @@ describe("AdaptiveStrategy", () => {
         expect(quotes[0]!.bidSize).toBeLessThanOrEqual(quotes[1]!.bidSize);
       }
     });
+
+    it("should respect imbalance protection in multi-level mode", () => {
+      // This test ensures the bug fix stays in place
+      strategy = new AdaptiveStrategy({
+        multiLevel: true,
+        dynamicSkew: true,
+        skipRiskySideThreshold: 0.75,
+        maxMarketSpread: 20,
+      });
+
+      const snapshot: MarketSnapshot = {
+        ticker: "TEST-MARKET",
+        bestBid: 50,
+        bestAsk: 60,
+        mid: 55,
+        spread: 10,
+        position: null,
+        imbalance: 0.84, // 84% bullish - above 75% threshold
+      };
+
+      const quotes = strategy.computeQuotes(snapshot);
+
+      // At 84% bullish imbalance, ALL quotes should have askSize = 0
+      for (const quote of quotes) {
+        expect(quote.askSize).toBe(0);
+      }
+    });
+
+    it("should reduce risky side size in multi-level mode", () => {
+      strategy = new AdaptiveStrategy({
+        multiLevel: true,
+        dynamicSkew: true,
+        skipRiskySideThreshold: 0.75,
+        extremeImbalanceThreshold: 0.6,
+        reduceRiskySideOnImbalance: true,
+        imbalanceSizeReduction: 0.5,
+        maxMarketSpread: 20,
+      });
+
+      const snapshot: MarketSnapshot = {
+        ticker: "TEST-MARKET",
+        bestBid: 50,
+        bestAsk: 60,
+        mid: 55,
+        spread: 10,
+        position: null,
+        imbalance: 0.65, // 65% bullish - between 60% and 75%
+      };
+
+      const quotes = strategy.computeQuotes(snapshot);
+
+      // At 65% bullish, ask sizes should be reduced (50% of normal)
+      // Level 1 normal = 2, reduced = 1
+      // Level 2 normal = 5, reduced = 2
+      for (const quote of quotes) {
+        expect(quote.askSize).toBeLessThan(quote.bidSize);
+      }
+    });
   });
 
   describe("updateParams", () => {
