@@ -108,6 +108,9 @@ export class Bot {
   // Global rate limiter - prevents burst of API calls across all markets
   private lastGlobalApiCall: number = 0;
   private readonly MIN_GLOBAL_API_INTERVAL_MS = 200; // Max 5 API calls/sec total
+  
+  // Quote caching - skip API if quote unchanged
+  private lastSentQuote: Map<string, { bidPrice: number; askPrice: number; bidSize: number; askSize: number }> = new Map();
 
   // Logging
   private logFile: string;
@@ -269,6 +272,8 @@ export class Bot {
       const cancelled = await this.orderManager.cancelAll();
       console.log(`[Bot] Cancelled ${cancelled} orders`);
     }
+    // Clear quote cache so we re-quote fresh when resumed
+    this.lastSentQuote.clear();
   }
 
   /**
@@ -585,6 +590,9 @@ export class Bot {
 
     // Update risk with realized P&L
     this.risk.onFill(fill, realizedFromFill);
+    
+    // Invalidate quote cache - position changed, need to re-quote with new inventory skew
+    this.lastSentQuote.delete(ticker);
   }
 
   private async updateQuotes(ticker: string): Promise<void> {
@@ -631,6 +639,17 @@ export class Bot {
 
     // Place quotes (risk check happens inside updateQuote)
     for (const quote of quotes) {
+      // QUOTE CACHING: Skip API call if quote is identical to last sent
+      const lastQuote = this.lastSentQuote.get(quote.ticker);
+      if (lastQuote && 
+          lastQuote.bidPrice === quote.bidPrice && 
+          lastQuote.askPrice === quote.askPrice &&
+          lastQuote.bidSize === quote.bidSize &&
+          lastQuote.askSize === quote.askSize) {
+        // Quote unchanged - skip API call entirely
+        continue;
+      }
+
       const check = this.risk.checkQuote(quote, this.inventory);
       if (!check.allowed) {
         console.log(`[Bot] ⚠️ Quote rejected: ${check.reason}`);
@@ -639,6 +658,15 @@ export class Bot {
 
       try {
         await this.orderManager.updateQuote(quote);
+        
+        // Cache the quote we just sent
+        this.lastSentQuote.set(quote.ticker, {
+          bidPrice: quote.bidPrice,
+          askPrice: quote.askPrice,
+          bidSize: quote.bidSize,
+          askSize: quote.askSize,
+        });
+        
         const adverseTag = adverseSelection ? " [ADVERSE]" : "";
         console.log(`[Bot] 📝 Quote: ${quote.ticker} ${quote.bidSize}x@${quote.bidPrice}¢ / ${quote.askSize}x@${quote.askPrice}¢${adverseTag}`);
       } catch (error) {
