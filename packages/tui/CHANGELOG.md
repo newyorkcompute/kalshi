@@ -1,5 +1,15 @@
 # @newyorkcompute/kalshi-tui
 
+## 0.6.0
+
+### Minor Changes
+
+- [#63](https://github.com/newyorkcompute/kalshi/pull/63) [`e46e147`](https://github.com/newyorkcompute/kalshi/commit/e46e1475e4c69d651db6b9f31f0880dd66eeaa5e) Thanks [@siddharthkul](https://github.com/siddharthkul)! - Add sort toggle to markets list
+
+  - Press `s` to cycle through sort options: Volume → 24h → Open Interest → Price
+  - Active sort column is highlighted in the header
+  - Selection resets to top when sort changes
+
 ## 0.5.0
 
 ### Minor Changes
