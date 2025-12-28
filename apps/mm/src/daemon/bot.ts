@@ -657,8 +657,8 @@ export class Bot {
       this.quoteLatencies.shift();
     }
     
-    // Warn on very slow updates (Kalshi API typically 150-250ms)
-    if (ms > 400) {
+    // Warn on slow updates (with batch APIs, should be ~100-150ms)
+    if (ms > 200) {
       console.warn(`[Bot] ⚠️ Slow quote update: ${ms}ms`);
     }
   }

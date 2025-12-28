@@ -98,10 +98,87 @@ export class OrderManager {
 
   /**
    * Place multiple orders (for two-sided quotes)
+   * @deprecated Use batchCreate() for better performance
    */
   async placeBulk(inputs: CreateOrderInput[]): Promise<PlaceOrderResult[]> {
     // Place in parallel for speed
     return Promise.all(inputs.map((input) => this.place(input)));
+  }
+
+  /**
+   * Batch create multiple orders in a single API call
+   * Much faster than creating one by one (1 API call instead of N)
+   */
+  async batchCreate(inputs: CreateOrderInput[]): Promise<PlaceOrderResult[]> {
+    if (inputs.length === 0) return [];
+
+    // Generate client order IDs and create managed orders
+    const ordersWithIds = inputs.map((input) => {
+      const clientOrderId = generateClientOrderId();
+      const managedOrder: ManagedOrder = {
+        clientOrderId,
+        ticker: input.ticker,
+        side: input.side,
+        action: input.action,
+        price: input.price,
+        count: input.count,
+        status: "pending",
+        createdAt: new Date(),
+        filledCount: 0,
+      };
+      this.orders.set(clientOrderId, managedOrder);
+      return { input, clientOrderId, managedOrder };
+    });
+
+    try {
+      const response = await this.ordersApi.batchCreateOrders({
+        orders: ordersWithIds.map(({ input, clientOrderId }) => ({
+          ticker: input.ticker,
+          type: "limit" as const,
+          side: input.side,
+          action: input.action,
+          yes_price: input.side === "yes" ? input.price : undefined,
+          no_price: input.side === "no" ? input.price : undefined,
+          count: input.count,
+          client_order_id: clientOrderId,
+        })),
+      });
+
+      // Map responses back to our results
+      const results: PlaceOrderResult[] = [];
+      const responseOrders = response.data.orders ?? [];
+
+      for (let i = 0; i < ordersWithIds.length; i++) {
+        const { managedOrder } = ordersWithIds[i]!;
+        const responseItem = responseOrders[i];
+        const order = responseItem?.order;
+
+        if (order?.order_id) {
+          managedOrder.id = order.order_id;
+          managedOrder.status = this.mapKalshiStatus(order.status);
+          results.push({ success: true, order: managedOrder });
+        } else {
+          managedOrder.status = "failed";
+          const errorMsg = responseItem?.error?.message ?? "No order in response";
+          results.push({
+            success: false,
+            order: managedOrder,
+            error: errorMsg,
+          });
+        }
+      }
+
+      return results;
+    } catch (error) {
+      // Mark all orders as failed
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+
+      return ordersWithIds.map(({ managedOrder }) => {
+        managedOrder.status = "failed";
+        return { success: false, order: managedOrder, error: errorMessage };
+      });
+    }
   }
 
   /**
@@ -128,20 +205,58 @@ export class OrderManager {
    */
   async cancelAll(ticker?: string): Promise<number> {
     const ordersToCancel = this.getActive(ticker);
-    let cancelledCount = 0;
+    if (ordersToCancel.length === 0) return 0;
 
-    // Cancel in parallel
-    const results = await Promise.allSettled(
-      ordersToCancel.map((order) => this.cancel(order.clientOrderId))
-    );
+    // Get order IDs (only orders that have been confirmed by Kalshi)
+    const orderIds = ordersToCancel
+      .filter((o) => o.id)
+      .map((o) => o.id as string);
 
-    for (const result of results) {
-      if (result.status === "fulfilled" && result.value) {
-        cancelledCount++;
+    if (orderIds.length === 0) return 0;
+
+    // Use batch cancel for efficiency (1 API call instead of N)
+    return this.batchCancel(orderIds);
+  }
+
+  /**
+   * Batch cancel multiple orders in a single API call
+   * Much faster than canceling one by one
+   */
+  async batchCancel(orderIds: string[]): Promise<number> {
+    if (orderIds.length === 0) return 0;
+
+    try {
+      const response = await this.ordersApi.batchCancelOrders({
+        ids: orderIds,
+      });
+
+      // Update local order status
+      const cancelledOrders = response.data.orders ?? [];
+      for (const cancelled of cancelledOrders) {
+        // Find by Kalshi order ID and update status
+        for (const order of this.orders.values()) {
+          if (order.id === cancelled.order_id) {
+            order.status = "cancelled";
+            break;
+          }
+        }
       }
-    }
 
-    return cancelledCount;
+      return cancelledOrders.length;
+    } catch {
+      // Fallback to individual cancels if batch fails
+      console.warn("[OrderManager] Batch cancel failed, falling back to individual cancels");
+      let cancelledCount = 0;
+      for (const orderId of orderIds) {
+        try {
+          await this.ordersApi.cancelOrder(orderId);
+          cancelledCount++;
+        } catch {
+          // Order may already be filled or cancelled
+        }
+      }
+      return cancelledCount;
+    }
   }
 
   /**
@@ -196,21 +311,76 @@ export class OrderManager {
   }
 
   /**
-   * Update quotes for a market (ATOMIC: place new BEFORE canceling old)
+   * Update quotes for a market (FAST: batch APIs in parallel)
    *
-   * This is the main method for market making - it updates quotes with
-   * minimal exposure gap:
-   * 1. Place new orders first (briefly have double exposure)
-   * 2. Cancel old orders only after new ones confirmed
+   * This is the main method for market making - optimized for low latency:
+   * 1. Batch cancel existing orders (1 API call)
+   * 2. Batch create new orders (1 API call)
+   * 3. Run both in PARALLEL for ~100ms instead of ~400ms
    *
-   * This prevents the "naked" period where we have no quotes in market.
+   * Note: This has a brief "naked" period. Use updateQuoteAtomic() if you
+   * need to always have quotes in market.
    */
   async updateQuote(quote: Quote): Promise<{
     cancelled: number;
     placed: PlaceOrderResult[];
   }> {
+    // Get existing order IDs for this ticker
+    const existingOrders = this.getActive(quote.ticker);
+    const existingIds = existingOrders
+      .filter((o) => o.id)
+      .map((o) => o.id as string);
+
+    // Build new orders
+    const newOrders: CreateOrderInput[] = [];
+
+    // Bid (buy YES at bid price)
+    if (quote.bidSize > 0 && quote.bidPrice >= 1 && quote.bidPrice <= 99) {
+      newOrders.push({
+        ticker: quote.ticker,
+        side: quote.side,
+        action: "buy",
+        price: quote.bidPrice,
+        count: quote.bidSize,
+      });
+    }
+
+    // Ask (sell YES at ask price, or buy NO)
+    if (quote.askSize > 0 && quote.askPrice >= 1 && quote.askPrice <= 99) {
+      newOrders.push({
+        ticker: quote.ticker,
+        side: quote.side,
+        action: "sell",
+        price: quote.askPrice,
+        count: quote.askSize,
+      });
+    }
+
+    // Run batch cancel and batch create IN PARALLEL
+    // This cuts latency in half: ~200ms instead of ~400ms
+    const [cancelled, placed] = await Promise.all([
+      existingIds.length > 0 ? this.batchCancel(existingIds) : Promise.resolve(0),
+      newOrders.length > 0 ? this.batchCreate(newOrders) : Promise.resolve([]),
+    ]);
+
+    return { cancelled, placed };
+  }
+
+  /**
+   * Update quotes atomically (place new BEFORE canceling old)
+   *
+   * Slower than updateQuote() but ensures we always have quotes in market.
+   * Use this if you're worried about the brief naked period.
+   */
+  async updateQuoteAtomic(quote: Quote): Promise<{
+    cancelled: number;
+    placed: PlaceOrderResult[];
+  }> {
     // Get existing orders for this ticker BEFORE placing new ones
     const existingOrders = this.getActive(quote.ticker);
+    const existingIds = existingOrders
+      .filter((o) => o.id)
+      .map((o) => o.id as string);
 
     // Build new orders
     const newOrders: CreateOrderInput[] = [];
@@ -238,28 +408,18 @@ export class OrderManager {
     }
 
     // 1. Place new orders FIRST (we briefly have double exposure)
-    const placed = await this.placeBulk(newOrders);
+    const placed = await this.batchCreate(newOrders);
 
     // 2. Cancel old orders AFTER new ones are placed
-    // Even if new orders fail, we still cancel old stale quotes
-    let cancelled = 0;
-    if (existingOrders.length > 0) {
-      const cancelResults = await Promise.allSettled(
-        existingOrders.map((order) => this.cancel(order.clientOrderId))
-      );
-      for (const result of cancelResults) {
-        if (result.status === "fulfilled" && result.value) {
-          cancelled++;
-        }
-      }
-    }
+    const cancelled =
+      existingIds.length > 0 ? await this.batchCancel(existingIds) : 0;
 
     return { cancelled, placed };
   }
 
   /**
-   * Update quotes (legacy mode: cancel first, then place)
-   * Use this if you're hitting rate limits from double orders
+   * Update quotes (legacy mode: cancel first, then place - sequential)
+   * @deprecated Use updateQuote() for better performance
    */
   async updateQuoteLegacy(quote: Quote): Promise<{
     cancelled: number;
@@ -291,7 +451,7 @@ export class OrderManager {
       });
     }
 
-    const placed = await this.placeBulk(orders);
+    const placed = await this.batchCreate(orders);
 
     return { cancelled, placed };
   }
