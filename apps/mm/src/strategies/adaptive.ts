@@ -327,6 +327,8 @@ export class AdaptiveStrategy extends BaseStrategy {
    * 
    * Level 1: Tight spread (1¢ inside), small size - captures spread
    * Level 2: Wider spread (at market), larger size - inventory management
+   * 
+   * IMPORTANT: This respects imbalance protection from Phase 3
    */
   private computeMultiLevelQuotes(
     snapshot: MarketSnapshot,
@@ -334,17 +336,49 @@ export class AdaptiveStrategy extends BaseStrategy {
     inventorySkew: number,
     minSpread: number
   ): Quote[] {
-    const { bestBid, bestAsk, ticker, position } = snapshot;
+    const { bestBid, bestAsk, ticker, position, imbalance } = snapshot;
     const inventory = position?.netExposure ?? 0;
+    const currentImbalance = imbalance ?? 0;
     const quotes: Quote[] = [];
+
+    // === APPLY IMBALANCE PROTECTION (Phase 3) ===
+    // This must be applied to multi-level quoting too!
+    let skipBids = false;
+    let skipAsks = false;
+    let bidSizeReduction = 1.0;
+    let askSizeReduction = 1.0;
+
+    // Skip risky side entirely when imbalance is VERY extreme
+    if (this.params.dynamicSkew && Math.abs(currentImbalance) >= this.params.skipRiskySideThreshold) {
+      if (currentImbalance > 0) {
+        skipAsks = true; // Don't sell into bullish market
+      } else {
+        skipBids = true; // Don't buy into bearish market
+      }
+    }
+    // Reduce size on "risky" side when imbalance is moderately extreme
+    else if (this.params.dynamicSkew && this.params.reduceRiskySideOnImbalance && 
+             Math.abs(currentImbalance) >= this.params.extremeImbalanceThreshold) {
+      if (currentImbalance > 0) {
+        askSizeReduction = this.params.imbalanceSizeReduction;
+      } else {
+        bidSizeReduction = this.params.imbalanceSizeReduction;
+      }
+    }
 
     // Level 1: Tight - quote 1¢ inside market, small size
     const level1Bid = this.clampPrice(bestBid + 1 - inventorySkew);
     const level1Ask = this.clampPrice(bestAsk - 1 - inventorySkew);
     
     if (level1Ask > level1Bid && (level1Ask - level1Bid) >= minSpread) {
-      const l1BidSize = inventory >= this.params.maxInventorySkew ? 0 : 2;
-      const l1AskSize = inventory <= -this.params.maxInventorySkew ? 0 : 2;
+      let l1BidSize = inventory >= this.params.maxInventorySkew ? 0 : 2;
+      let l1AskSize = inventory <= -this.params.maxInventorySkew ? 0 : 2;
+      
+      // Apply imbalance protection
+      if (skipBids) l1BidSize = 0;
+      if (skipAsks) l1AskSize = 0;
+      l1BidSize = Math.floor(l1BidSize * bidSizeReduction);
+      l1AskSize = Math.floor(l1AskSize * askSizeReduction);
       
       if (l1BidSize > 0 || l1AskSize > 0) {
         quotes.push({
@@ -365,8 +399,14 @@ export class AdaptiveStrategy extends BaseStrategy {
     if (level2Ask > level2Bid && (level2Ask - level2Bid) >= minSpread) {
       // Only add Level 2 if different from Level 1
       if (level2Bid !== level1Bid || level2Ask !== level1Ask) {
-        const l2BidSize = inventory >= this.params.maxInventorySkew ? 0 : 5;
-        const l2AskSize = inventory <= -this.params.maxInventorySkew ? 0 : 5;
+        let l2BidSize = inventory >= this.params.maxInventorySkew ? 0 : 5;
+        let l2AskSize = inventory <= -this.params.maxInventorySkew ? 0 : 5;
+        
+        // Apply imbalance protection
+        if (skipBids) l2BidSize = 0;
+        if (skipAsks) l2AskSize = 0;
+        l2BidSize = Math.floor(l2BidSize * bidSizeReduction);
+        l2AskSize = Math.floor(l2AskSize * askSizeReduction);
         
         if (l2BidSize > 0 || l2AskSize > 0) {
           quotes.push({
