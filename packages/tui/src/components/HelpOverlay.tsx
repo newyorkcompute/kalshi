@@ -29,7 +29,7 @@ export function HelpOverlay({ width, height }: HelpOverlayProps) {
     >
       <Box
         flexDirection="column"
-        borderStyle="double"
+        borderStyle="round"
         borderColor="cyan"
         paddingX={4}
         paddingY={1}
