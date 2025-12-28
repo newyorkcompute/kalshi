@@ -243,9 +243,10 @@ export class OrderManager {
       }
 
       return cancelledOrders.length;
-    } catch {
+    } catch (err) {
       // Fallback to individual cancels if batch fails
-      console.warn("[OrderManager] Batch cancel failed, falling back to individual cancels");
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.warn(`[OrderManager] Batch cancel failed (${errMsg}), falling back to individual cancels`);
       let cancelledCount = 0;
       for (const orderId of orderIds) {
         try {
