@@ -1,6 +1,6 @@
 {
   "name": "@newyorkcompute/kalshi-tui",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Beautiful terminal UI for Kalshi prediction markets — real-time data, trading, and portfolio management",
   "author": "NewYorkCompute",
   "license": "MIT",
