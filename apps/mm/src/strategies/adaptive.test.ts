@@ -91,7 +91,7 @@ describe("AdaptiveStrategy", () => {
           ticker: "TEST-MARKET",
           yesContracts: 10,
           noContracts: 0,
-          avgCost: 50,
+          costBasis: 500,
           netExposure: 10, // LONG
           unrealizedPnL: 0,
         },
@@ -118,7 +118,7 @@ describe("AdaptiveStrategy", () => {
           ticker: "TEST-MARKET",
           yesContracts: 0,
           noContracts: 10,
-          avgCost: 50,
+          costBasis: 500,
           netExposure: -10, // SHORT
           unrealizedPnL: 0,
         },
@@ -145,7 +145,7 @@ describe("AdaptiveStrategy", () => {
           ticker: "TEST-MARKET",
           yesContracts: 30,
           noContracts: 0,
-          avgCost: 50,
+          costBasis: 1500,
           netExposure: 30, // At maxInventorySkew
           unrealizedPnL: 0,
         },
