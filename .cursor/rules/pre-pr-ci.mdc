@@ -1,0 +1,25 @@
+---
+description: Run CI checks before creating pull requests
+alwaysApply: true
+---
+
+# Pre-PR CI Check
+
+**ALWAYS run `npm run ci` before creating a PR.** This command runs build, lint, test, and typecheck for all packages in the monorepo.
+
+```bash
+npm run ci
+```
+
+## What it checks
+
+- `build` - TypeScript compilation for all packages
+- `lint` - ESLint checks
+- `test` - Vitest unit tests  
+- `typecheck` - TypeScript type checking (without emit)
+
+## Requirements
+
+1. All checks must pass before opening a PR
+2. If any check fails, fix the issues before proceeding
+3. Do NOT create a PR with known CI failures
