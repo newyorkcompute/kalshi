@@ -1,5 +1,16 @@
 # @newyorkcompute/kalshi-core
 
+## 0.5.1
+
+### Patch Changes
+
+- [#75](https://github.com/newyorkcompute/kalshi/pull/75) [`a7c8ec6`](https://github.com/newyorkcompute/kalshi/commit/a7c8ec6175a96f04775e66891fa9b9364fe9df21) Thanks [@siddharthkul](https://github.com/siddharthkul)! - Add batch order APIs to OrderManager for improved latency
+
+  - `batchCancel()` - cancel multiple orders in 1 API call
+  - `batchCreate()` - create multiple orders in 1 API call
+  - `updateQuote()` now runs batch operations in parallel (~4x faster)
+  - `updateQuoteAtomic()` - sequential mode for minimal naked time
+
 ## 0.5.0
 
 ### Minor Changes
