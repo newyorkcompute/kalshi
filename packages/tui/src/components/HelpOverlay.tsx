@@ -33,6 +33,7 @@ export function HelpOverlay({ width, height }: HelpOverlayProps) {
         borderColor="cyan"
         paddingX={4}
         paddingY={1}
+        width={50}
       >
         {/* Title */}
         <Box justifyContent="center" marginBottom={1}>
