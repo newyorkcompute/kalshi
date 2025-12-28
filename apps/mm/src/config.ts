@@ -39,6 +39,12 @@ const AdaptiveStrategySchema = z.object({
   useMicroprice: z.boolean().default(true),
   multiLevel: z.boolean().default(false),
   adverseSelectionMultiplier: z.number().min(1).max(10).default(2.0),
+  // Phase 3: Dynamic Skew + Imbalance Awareness
+  dynamicSkew: z.boolean().default(true),
+  imbalanceSkewMultiplier: z.number().min(0).max(5).default(1.5),
+  extremeImbalanceThreshold: z.number().min(0.1).max(1).default(0.6),
+  reduceRiskySideOnImbalance: z.boolean().default(true),
+  imbalanceSizeReduction: z.number().min(0.1).max(1).default(0.5),
   // Time-decay near expiry
   expiryWidenStartSec: z.number().min(60).max(86400).default(3600),
   expiryStopQuoteSec: z.number().min(0).max(3600).default(300),

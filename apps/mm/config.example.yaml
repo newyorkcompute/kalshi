@@ -18,18 +18,24 @@ strategy:
     spreadCents: 4        # Total spread (2¢ bid, 2¢ ask)
     sizePerSide: 10       # Contracts per side
   
-  # RECOMMENDED: Adaptive strategy with Phase 2 enhancements
+  # RECOMMENDED: Adaptive strategy with Phase 2+3 enhancements
   adaptive:
     edgeCents: 1               # Quote 1¢ inside best bid/ask
     minSpreadCents: 2          # Minimum profit margin
     sizePerSide: 5             # Contracts per side
     maxMarketSpread: 15        # Skip illiquid markets (spread > 15¢)
-    skewFactor: 0.5            # Inventory skew (higher = more aggressive)
+    skewFactor: 0.5            # Base inventory skew (higher = more aggressive)
     maxInventorySkew: 30       # Stop adding to position at this level
     # Phase 2 Elite MM options:
     useMicroprice: true        # Use size-weighted mid as fair value
     multiLevel: false          # Quote at multiple price levels
     adverseSelectionMultiplier: 2.0  # Widen spread when being picked off
+    # Phase 3 Dynamic Skew (avoid getting stepped over in trending markets):
+    dynamicSkew: true          # Auto-adjust skew based on orderbook imbalance
+    imbalanceSkewMultiplier: 1.5  # How much to boost skew when trend is against you
+    extremeImbalanceThreshold: 0.6  # Imbalance level considered "extreme" (0-1)
+    reduceRiskySideOnImbalance: true  # Reduce size on risky side when imbalance extreme
+    imbalanceSizeReduction: 0.5  # Size multiplier on risky side (0.5 = 50%)
     # Time-decay near expiry:
     expiryWidenStartSec: 3600  # Start widening spread 1 hour before expiry
     expiryStopQuoteSec: 300    # Stop quoting 5 minutes before expiry
