@@ -181,6 +181,44 @@ describe("RiskManager", () => {
       expect(result.allowed).toBe(false);
       expect(result.reason).toContain("Order size");
     });
+
+    it("should reject order that would exceed position limit", () => {
+      // Add existing position near limit
+      inventory.onFill({
+        orderId: "order1",
+        ticker: "TEST-MARKET",
+        side: "yes",
+        action: "buy",
+        count: 95, // Near default limit of 100
+        price: 50,
+        timestamp: new Date(),
+      });
+
+      // Try to add 10 more - would exceed 100
+      const result = risk.checkOrder({ ticker: "TEST-MARKET", count: 10 }, inventory);
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain("position limit");
+    });
+
+    it("should reject order that would exceed total exposure limit", () => {
+      const customRisk = new RiskManager({ maxTotalExposure: 50 });
+
+      // Add existing exposure
+      inventory.onFill({
+        orderId: "order1",
+        ticker: "MARKET-A",
+        side: "yes",
+        action: "buy",
+        count: 45,
+        price: 50,
+        timestamp: new Date(),
+      });
+
+      // Try to add 10 more in different market - would exceed 50
+      const result = customRisk.checkOrder({ ticker: "MARKET-B", count: 10 }, inventory);
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain("total exposure");
+    });
   });
 
   describe("halt/resume", () => {

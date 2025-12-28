@@ -285,5 +285,133 @@ describe("InventoryTracker", () => {
       expect(posB!.netExposure).toBe(-5);
     });
   });
+
+  describe("getPnLSummary with currentPrices", () => {
+    it("should calculate unrealized PnL for YES position", () => {
+      // Buy 10 YES @ 50¢ = 500¢ cost
+      tracker.onFill({
+        orderId: "order1",
+        ticker: "TEST-MARKET",
+        side: "yes",
+        action: "buy",
+        count: 10,
+        price: 50,
+        timestamp: new Date(),
+      });
+
+      // Current price is 60¢ - unrealized profit = 10 * (60 - 50) = 100¢
+      const prices = new Map([["TEST-MARKET", 60]]);
+      const summary = tracker.getPnLSummary(prices);
+
+      expect(summary.unrealized).toBe(100);
+      expect(summary.total).toBe(100);
+    });
+
+    it("should calculate unrealized PnL for NO position", () => {
+      // Buy 10 NO @ 40¢ = 400¢ cost
+      tracker.onFill({
+        orderId: "order1",
+        ticker: "TEST-MARKET",
+        side: "no",
+        action: "buy",
+        count: 10,
+        price: 40,
+        timestamp: new Date(),
+      });
+
+      // Current YES price is 50¢, so NO value = 10 * (100-50) = 500¢
+      // Unrealized = 500 - 400 = 100¢
+      const prices = new Map([["TEST-MARKET", 50]]);
+      const summary = tracker.getPnLSummary(prices);
+
+      expect(summary.unrealized).toBe(100);
+    });
+
+    it("should skip positions with zero exposure", () => {
+      tracker.initializeFromPortfolio([
+        { ticker: "MARKET-A", yesContracts: 0, noContracts: 0, costBasis: 0 },
+      ]);
+
+      const prices = new Map([["MARKET-A", 50]]);
+      const summary = tracker.getPnLSummary(prices);
+
+      expect(summary.unrealized).toBe(0);
+    });
+
+    it("should skip markets without current price", () => {
+      tracker.onFill({
+        orderId: "order1",
+        ticker: "TEST-MARKET",
+        side: "yes",
+        action: "buy",
+        count: 10,
+        price: 50,
+        timestamp: new Date(),
+      });
+
+      // Empty prices map
+      const prices = new Map<string, number>();
+      const summary = tracker.getPnLSummary(prices);
+
+      expect(summary.unrealized).toBe(0);
+    });
+  });
+
+  describe("sell NO contracts", () => {
+    it("should subtract NO contracts on sell", () => {
+      // First buy NO
+      tracker.onFill({
+        orderId: "order1",
+        ticker: "TEST-MARKET",
+        side: "no",
+        action: "buy",
+        count: 10,
+        price: 40,
+        timestamp: new Date(),
+      });
+
+      // Then sell NO
+      tracker.onFill({
+        orderId: "order2",
+        ticker: "TEST-MARKET",
+        side: "no",
+        action: "sell",
+        count: 5,
+        price: 45,
+        timestamp: new Date(),
+      });
+
+      const position = tracker.getPosition("TEST-MARKET");
+      expect(position!.noContracts).toBe(5);
+      expect(position!.netExposure).toBe(-5);
+    });
+
+    it("should calculate realized PnL when selling NO", () => {
+      // Buy 10 NO @ 40¢
+      tracker.onFill({
+        orderId: "order1",
+        ticker: "TEST-MARKET",
+        side: "no",
+        action: "buy",
+        count: 10,
+        price: 40,
+        timestamp: new Date(),
+      });
+
+      // Sell 5 NO @ 50¢ - profit = 5 * (50 - 40) = 50¢
+      tracker.onFill({
+        orderId: "order2",
+        ticker: "TEST-MARKET",
+        side: "no",
+        action: "sell",
+        count: 5,
+        price: 50,
+        timestamp: new Date(),
+      });
+
+      const summary = tracker.getPnLSummary();
+      expect(summary.realizedToday).toBeGreaterThan(0);
+    });
+  });
 });
 
