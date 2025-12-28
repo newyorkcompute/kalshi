@@ -1,5 +1,18 @@
 # @newyorkcompute/kalshi-core
 
+## 0.5.0
+
+### Minor Changes
+
+- [#69](https://github.com/newyorkcompute/kalshi/pull/69) [`29118c6`](https://github.com/newyorkcompute/kalshi/commit/29118c64ed09c13fdaa392c161dc1adbfca3be5c) Thanks [@siddharthkul](https://github.com/siddharthkul)! - Add elite MM improvements: inventory skew, local orderbook, atomic quote updates
+
+  - **Inventory Skew**: Adaptive strategy now skews quotes based on inventory (Avellaneda-Stoikov style)
+  - **LocalOrderbook**: New class to maintain orderbook from WebSocket snapshots/deltas
+  - **OrderbookManager**: Manages multiple LocalOrderbook instances
+  - **Microprice**: Size-weighted mid price calculation for better fair value
+  - **Atomic Updates**: Place new orders before canceling old ones (no naked periods)
+  - **Latency Tracking**: Track quote update latencies with percentile stats
+
 ## 0.4.0
 
 ### Minor Changes
