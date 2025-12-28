@@ -98,8 +98,12 @@ export class Bot {
   // Quote debouncing - prevent excessive API calls
   private lastQuoteUpdate: Map<string, number> = new Map();
   private lastBBO: Map<string, { bid: number; ask: number }> = new Map();
-  private readonly MIN_QUOTE_INTERVAL_MS = 500; // Don't update more than 2x/sec
+  private readonly MIN_QUOTE_INTERVAL_MS = 1000; // Don't update more than 1x/sec per market
   private readonly MIN_PRICE_CHANGE = 1; // Only update if price moves 1¢+
+  
+  // Global rate limiter - prevents burst of API calls across all markets
+  private lastGlobalApiCall: number = 0;
+  private readonly MIN_GLOBAL_API_INTERVAL_MS = 200; // Max 5 API calls/sec total
 
   // Logging
   private logFile: string;
@@ -428,8 +432,19 @@ export class Bot {
     // Update legacy market data for backward compatibility
     this.marketData.set(ticker, { bestBid, bestAsk });
 
+    // DEBOUNCE: Check if we should update quotes
+    if (!this.shouldUpdateQuotes(ticker, bestBid, bestAsk)) {
+      return; // Skip this update - too soon or no significant change
+    }
+
     // Generate and place quotes
+    const startTime = Date.now();
     await this.updateQuotes(ticker);
+    this.trackLatency(Date.now() - startTime);
+
+    // Record this update
+    this.lastQuoteUpdate.set(ticker, Date.now());
+    this.lastBBO.set(ticker, { bid: bestBid, ask: bestAsk });
   }
 
   private async onOrderbookDelta(data: OrderbookDelta): Promise<void> {
@@ -476,14 +491,25 @@ export class Bot {
     // Skip if paused or halted
     if (this.paused || this.risk.shouldHalt()) return;
 
+    const bestBid = data.yes_bid ?? 0;
+    const bestAsk = data.yes_ask ?? 0;
+
     // Update market data
-    this.marketData.set(ticker, {
-      bestBid: data.yes_bid ?? 0,
-      bestAsk: data.yes_ask ?? 0,
-    });
+    this.marketData.set(ticker, { bestBid, bestAsk });
+
+    // DEBOUNCE: Check if we should update quotes
+    if (!this.shouldUpdateQuotes(ticker, bestBid, bestAsk)) {
+      return; // Skip this update - too soon or no significant change
+    }
 
     // Generate and place quotes
+    const startTime = Date.now();
     await this.updateQuotes(ticker);
+    this.trackLatency(Date.now() - startTime);
+
+    // Record this update
+    this.lastQuoteUpdate.set(ticker, Date.now());
+    this.lastBBO.set(ticker, { bid: bestBid, ask: bestAsk });
   }
 
   private async onFill(data: FillData): Promise<void> {
@@ -624,13 +650,29 @@ export class Bot {
     const now = Date.now();
     const lastUpdate = this.lastQuoteUpdate.get(ticker) ?? 0;
     const lastPrices = this.lastBBO.get(ticker);
+    
+    // FIRST quote for this market - always allow (staggered by global rate limit)
+    if (lastUpdate === 0) {
+      // But still respect global rate limit to stagger initial quotes
+      if (now - this.lastGlobalApiCall < this.MIN_GLOBAL_API_INTERVAL_MS) {
+        return false; // Wait for global slot
+      }
+      this.lastGlobalApiCall = now;
+      return true;
+    }
+    
+    // GLOBAL rate limit - prevent burst of API calls across all markets
+    if (now - this.lastGlobalApiCall < this.MIN_GLOBAL_API_INTERVAL_MS) {
+      return false; // Too many API calls globally
+    }
 
-    // Always update if it's been a while
+    // Always update if it's been a while for this specific market
     if (now - lastUpdate > this.MIN_QUOTE_INTERVAL_MS * 2) {
+      this.lastGlobalApiCall = now;
       return true;
     }
 
-    // Check time-based debounce
+    // Check time-based debounce for this market
     if (now - lastUpdate < this.MIN_QUOTE_INTERVAL_MS) {
       // Too soon - but check if price moved significantly
       if (lastPrices) {
@@ -639,12 +681,14 @@ export class Bot {
         
         // Only update if price moved significantly
         if (bidChange >= this.MIN_PRICE_CHANGE || askChange >= this.MIN_PRICE_CHANGE) {
+          this.lastGlobalApiCall = now;
           return true;
         }
       }
       return false; // Skip - too soon and no significant change
     }
 
+    this.lastGlobalApiCall = now;
     return true; // Enough time has passed
   }
 
@@ -657,8 +701,8 @@ export class Bot {
       this.quoteLatencies.shift();
     }
     
-    // Warn on very slow updates (Kalshi API typically 150-250ms)
-    if (ms > 400) {
+    // Warn on slow updates (with batch APIs, should be ~100-150ms)
+    if (ms > 200) {
       console.warn(`[Bot] ⚠️ Slow quote update: ${ms}ms`);
     }
   }

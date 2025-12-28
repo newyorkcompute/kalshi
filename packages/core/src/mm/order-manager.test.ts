@@ -14,6 +14,21 @@ function createMockOrdersApi(): OrdersApi {
       },
     }),
     cancelOrder: vi.fn().mockResolvedValue({}),
+    batchCancelOrders: vi.fn().mockImplementation(({ ids }: { ids: string[] }) => {
+      return Promise.resolve({
+        data: {
+          orders: ids.map((id) => ({ order_id: id })),
+        },
+      });
+    }),
+    batchCreateOrders: vi.fn().mockResolvedValue({
+      data: {
+        orders: [
+          { order: { order_id: "batch-order-1", status: "resting" } },
+          { order: { order_id: "batch-order-2", status: "resting" } },
+        ],
+      },
+    }),
   } as unknown as OrdersApi;
 }
 
@@ -394,6 +409,154 @@ describe("OrderManager", () => {
 
       expect(removed).toBe(0);
       expect(manager.getAll()).toHaveLength(1);
+    });
+  });
+
+  describe("batchCancel", () => {
+    it("should cancel multiple orders in one API call", async () => {
+      const result = await manager.batchCancel(["order-1", "order-2", "order-3"]);
+
+      expect(mockApi.batchCancelOrders).toHaveBeenCalledWith({
+        ids: ["order-1", "order-2", "order-3"],
+      });
+      expect(result).toBeGreaterThanOrEqual(0);
+    });
+
+    it("should return 0 for empty array", async () => {
+      const result = await manager.batchCancel([]);
+      expect(result).toBe(0);
+      expect(mockApi.batchCancelOrders).not.toHaveBeenCalled();
+    });
+
+    it("should fall back to individual cancels on batch failure", async () => {
+      (mockApi.batchCancelOrders as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error("Batch not supported")
+      );
+
+      const result = await manager.batchCancel(["order-1", "order-2"]);
+
+      // Should have attempted individual cancels
+      expect(mockApi.cancelOrder).toHaveBeenCalledTimes(2);
+      expect(result).toBe(2);
+    });
+  });
+
+  describe("batchCreate", () => {
+    it("should create multiple orders in one API call", async () => {
+      const results = await manager.batchCreate([
+        { ticker: "TEST-MARKET", side: "yes", action: "buy", price: 45, count: 10 },
+        { ticker: "TEST-MARKET", side: "yes", action: "sell", price: 55, count: 10 },
+      ]);
+
+      expect(mockApi.batchCreateOrders).toHaveBeenCalledTimes(1);
+      expect(results).toHaveLength(2);
+      expect(results[0].success).toBe(true);
+      expect(results[1].success).toBe(true);
+      expect(results[0].order?.id).toBe("batch-order-1");
+      expect(results[1].order?.id).toBe("batch-order-2");
+    });
+
+    it("should return empty array for empty input", async () => {
+      const results = await manager.batchCreate([]);
+      expect(results).toHaveLength(0);
+      expect(mockApi.batchCreateOrders).not.toHaveBeenCalled();
+    });
+
+    it("should handle API errors", async () => {
+      (mockApi.batchCreateOrders as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error("Rate limit exceeded")
+      );
+
+      const results = await manager.batchCreate([
+        { ticker: "TEST-MARKET", side: "yes", action: "buy", price: 45, count: 10 },
+      ]);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].success).toBe(false);
+      expect(results[0].error).toBe("Rate limit exceeded");
+      expect(results[0].order?.status).toBe("failed");
+    });
+
+    it("should track orders in internal state", async () => {
+      const results = await manager.batchCreate([
+        { ticker: "TEST-MARKET", side: "yes", action: "buy", price: 45, count: 10 },
+      ]);
+
+      const order = manager.get(results[0].order!.clientOrderId);
+      expect(order).toBeDefined();
+      expect(order?.id).toBe("batch-order-1");
+    });
+  });
+
+  describe("updateQuote with batch APIs", () => {
+    it("should use batch APIs in parallel", async () => {
+      // Place initial orders
+      await manager.place({
+        ticker: "TEST-MARKET",
+        side: "yes",
+        action: "buy",
+        price: 45,
+        count: 10,
+      });
+
+      // Update quote - should use batch cancel and batch create
+      const result = await manager.updateQuote({
+        ticker: "TEST-MARKET",
+        side: "yes",
+        bidPrice: 48,
+        bidSize: 15,
+        askPrice: 52,
+        askSize: 15,
+      });
+
+      // Should have used batch APIs
+      expect(mockApi.batchCancelOrders).toHaveBeenCalled();
+      expect(mockApi.batchCreateOrders).toHaveBeenCalled();
+      expect(result.placed).toHaveLength(2);
+    });
+  });
+
+  describe("updateQuoteAtomic", () => {
+    it("should place new orders before canceling old ones", async () => {
+      // Place initial order
+      await manager.place({
+        ticker: "TEST-MARKET",
+        side: "yes",
+        action: "buy",
+        price: 45,
+        count: 10,
+      });
+
+      // Track call order
+      const callOrder: string[] = [];
+      (mockApi.batchCreateOrders as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+        callOrder.push("create");
+        return {
+          data: {
+            orders: [
+              { order: { order_id: "new-order-1", status: "resting" } },
+              { order: { order_id: "new-order-2", status: "resting" } },
+            ],
+          },
+        };
+      });
+      (mockApi.batchCancelOrders as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+        callOrder.push("cancel");
+        return { data: { orders: [{ order_id: "kalshi-order-123" }] } };
+      });
+
+      // Update quote atomically
+      await manager.updateQuoteAtomic({
+        ticker: "TEST-MARKET",
+        side: "yes",
+        bidPrice: 48,
+        bidSize: 15,
+        askPrice: 52,
+        askSize: 15,
+      });
+
+      // Create should be called BEFORE cancel
+      expect(callOrder).toEqual(["create", "cancel"]);
     });
   });
 });
