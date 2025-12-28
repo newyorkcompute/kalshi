@@ -93,6 +93,12 @@ export class Bot {
   private quoteLatencies: number[] = [];
   private readonly MAX_LATENCY_SAMPLES = 100;
 
+  // Quote debouncing - prevent excessive API calls
+  private lastQuoteUpdate: Map<string, number> = new Map();
+  private lastBBO: Map<string, { bid: number; ask: number }> = new Map();
+  private readonly MIN_QUOTE_INTERVAL_MS = 500; // Don't update more than 2x/sec
+  private readonly MIN_PRICE_CHANGE = 1; // Only update if price moves 1¢+
+
   // Logging
   private logFile: string;
   private lastSummaryTime: number = 0;
@@ -438,11 +444,19 @@ export class Bot {
       bestAsk: bbo.askPrice 
     });
 
-    // Update quotes on delta (faster reaction than waiting for ticker)
-    // Only if the change is meaningful (BBO actually changed)
+    // DEBOUNCE: Check if we should update quotes
+    if (!this.shouldUpdateQuotes(ticker, bbo.bidPrice, bbo.askPrice)) {
+      return; // Skip this update
+    }
+
+    // Update quotes
     const startTime = Date.now();
     await this.updateQuotes(ticker);
     this.trackLatency(Date.now() - startTime);
+
+    // Record this update
+    this.lastQuoteUpdate.set(ticker, Date.now());
+    this.lastBBO.set(ticker, { bid: bbo.bidPrice, ask: bbo.askPrice });
   }
 
   private async onTicker(data: TickerData): Promise<void> {
@@ -562,6 +576,37 @@ export class Bot {
   }
 
   /**
+   * Check if we should update quotes (debouncing + significant change detection)
+   */
+  private shouldUpdateQuotes(ticker: string, newBid: number, newAsk: number): boolean {
+    const now = Date.now();
+    const lastUpdate = this.lastQuoteUpdate.get(ticker) ?? 0;
+    const lastPrices = this.lastBBO.get(ticker);
+
+    // Always update if it's been a while
+    if (now - lastUpdate > this.MIN_QUOTE_INTERVAL_MS * 2) {
+      return true;
+    }
+
+    // Check time-based debounce
+    if (now - lastUpdate < this.MIN_QUOTE_INTERVAL_MS) {
+      // Too soon - but check if price moved significantly
+      if (lastPrices) {
+        const bidChange = Math.abs(newBid - lastPrices.bid);
+        const askChange = Math.abs(newAsk - lastPrices.ask);
+        
+        // Only update if price moved significantly
+        if (bidChange >= this.MIN_PRICE_CHANGE || askChange >= this.MIN_PRICE_CHANGE) {
+          return true;
+        }
+      }
+      return false; // Skip - too soon and no significant change
+    }
+
+    return true; // Enough time has passed
+  }
+
+  /**
    * Track quote update latency
    */
   private trackLatency(ms: number): void {
@@ -570,8 +615,8 @@ export class Bot {
       this.quoteLatencies.shift();
     }
     
-    // Warn on slow updates
-    if (ms > 100) {
+    // Warn on very slow updates (Kalshi API typically 150-250ms)
+    if (ms > 400) {
       console.warn(`[Bot] ⚠️ Slow quote update: ${ms}ms`);
     }
   }
