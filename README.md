@@ -9,10 +9,12 @@
 
 ## Features
 
-- 🤖 **11 MCP Tools** — Markets, events, portfolio, and order management
+- 🤖 **14 MCP Tools** — Markets, events, portfolio, and order management
 - 🧠 **Agent Skills** — Code-first alternative for Claude Code/API
 - 📈 **Real Trading** — Place and cancel orders via AI agents
 - 🔐 **Secure Auth** — RSA-PSS authentication with the official SDK
+- 📡 **WebSocket** — Real-time market data streaming
+- 🤑 **Market Maker** — Automated quoting bot with inventory management
 - ⚡ **TypeScript** — Fully typed, modern ESM package
 - 📦 **NX Monorepo** — Scalable, cacheable builds
 
@@ -30,6 +32,7 @@
 | [`@newyorkcompute/kalshi-mcp`](./packages/mcp) | MCP server for AI agents | [![npm](https://img.shields.io/npm/v/@newyorkcompute/kalshi-mcp)](https://www.npmjs.com/package/@newyorkcompute/kalshi-mcp) |
 | [`@newyorkcompute/kalshi-tui`](./packages/tui) | Terminal UI dashboard | [![npm](https://img.shields.io/npm/v/@newyorkcompute/kalshi-tui)](https://www.npmjs.com/package/@newyorkcompute/kalshi-tui) |
 | [`@newyorkcompute/kalshi-core`](./packages/core) | Shared SDK utilities | [![npm](https://img.shields.io/npm/v/@newyorkcompute/kalshi-core)](https://www.npmjs.com/package/@newyorkcompute/kalshi-core) |
+| [`@newyorkcompute/kalshi-mm`](./apps/mm) | Market maker bot | 🚧 Internal |
 | [`kalshi-trading`](./skills/kalshi-trading) | Agent Skill for Claude | [![npm](https://img.shields.io/badge/npm-skill-lightgrey?logo=npm&label=skill)](https://github.com/newyorkcompute/kalshi/tree/main/skills/kalshi-trading) |
 
 ## Quick Start
@@ -189,6 +192,8 @@ Claude will use the Skill's instructions to write and execute the appropriate co
 |------|-------------|
 | `get_balance` | Get account balance and portfolio value |
 | `get_positions` | Get current positions on markets |
+| `get_fills` | Get executed trade history |
+| `get_settlements` | Get settlement history for resolved markets |
 
 ### Order Tools
 | Tool | Description |
@@ -196,6 +201,7 @@ Claude will use the Skill's instructions to write and execute the appropriate co
 | `get_orders` | List your orders with filters |
 | `create_order` | Place buy/sell orders ⚠️ |
 | `cancel_order` | Cancel resting orders |
+| `batch_cancel_orders` | Cancel multiple orders at once |
 
 ### Example Prompts
 
@@ -249,12 +255,19 @@ npx nx build @newyorkcompute/kalshi-mcp
 
 ```
 kalshi/
+├── apps/
+│   └── mm/                  # Market maker bot
+│       └── src/
+│           ├── daemon/      # Bot logic
+│           ├── strategies/  # Quoting strategies
+│           └── api/         # HTTP control plane
 ├── packages/
 │   ├── core/                # @newyorkcompute/kalshi-core
 │   │   └── src/
 │   │       ├── config.ts    # SDK configuration
 │   │       ├── format.ts    # Formatting utilities
-│   │       └── types.ts     # Type re-exports
+│   │       ├── mm/          # Market making primitives
+│   │       └── websocket/   # WebSocket client
 │   ├── mcp/                 # @newyorkcompute/kalshi-mcp
 │   │   └── src/
 │   │       ├── index.ts     # MCP server entry
@@ -275,7 +288,7 @@ kalshi/
 
 ## Requirements
 
-- Node.js 18+
+- Node.js 22+ (LTS)
 - Kalshi account with API access
 
 ## Contributing
