@@ -1,6 +1,6 @@
 {
   "name": "@newyorkcompute/kalshi-core",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Shared utilities for Kalshi prediction market tools — SDK configuration, formatting, and types",
   "author": "NewYorkCompute",
   "license": "MIT",

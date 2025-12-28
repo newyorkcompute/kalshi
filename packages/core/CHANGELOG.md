@@ -1,5 +1,11 @@
 # @newyorkcompute/kalshi-core
 
+## 0.6.2
+
+### Patch Changes
+
+- [#88](https://github.com/newyorkcompute/kalshi/pull/88) [`69387fe`](https://github.com/newyorkcompute/kalshi/commit/69387fe2a4bcbc2d35a43d5a8830272e4a078c0d) Thanks [@siddharthkul](https://github.com/siddharthkul)! - Add defensive checks for finalized market orderbook snapshots to prevent TypeError when yes/no arrays are null or undefined
+
 ## 0.6.1
 
 ### Patch Changes
