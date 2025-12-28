@@ -10,6 +10,8 @@ interface Position {
   ticker: string;
   position: number;
   market_exposure: number;
+  currentPrice?: number;
+  pnl?: number;
 }
 
 interface PositionsProps {
@@ -20,6 +22,15 @@ interface PositionsProps {
 
 export function Positions({ positions, height, isLoading }: PositionsProps) {
   const formatCurrency = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+  
+  const formatPnl = (pnl: number) => {
+    const sign = pnl >= 0 ? '+' : '';
+    return `${sign}${(pnl / 100).toFixed(2)}`;
+  };
+
+  // Calculate total P&L
+  const totalPnl = positions.reduce((sum, pos) => sum + (pos.pnl || 0), 0);
+  const totalPnlColor = totalPnl >= 0 ? 'green' : 'red';
 
   return (
     <Box 
@@ -29,9 +40,14 @@ export function Positions({ positions, height, isLoading }: PositionsProps) {
       height={height}
       width="100%"
     >
-      {/* Title */}
-      <Box paddingX={1}>
+      {/* Title with total P&L */}
+      <Box paddingX={1} justifyContent="space-between">
         <Text bold> POSITIONS </Text>
+        {positions.length > 0 && (
+          <Text color={totalPnlColor} bold>
+            {formatPnl(totalPnl)}
+          </Text>
+        )}
       </Box>
 
       {/* Positions List */}
@@ -44,15 +60,19 @@ export function Positions({ positions, height, isLoading }: PositionsProps) {
           positions.slice(0, height - 3).map((pos) => {
             const side = pos.position > 0 ? 'YES' : 'NO';
             const sideColor = pos.position > 0 ? 'green' : 'red';
+            const pnlColor = (pos.pnl || 0) >= 0 ? 'green' : 'red';
             
             return (
               <Box key={pos.ticker} justifyContent="space-between">
-                <Text>{pos.ticker.slice(0, 18)}</Text>
+                <Text>{pos.ticker.slice(0, 16)}</Text>
                 <Box>
                   <Text color={sideColor}>
                     {Math.abs(pos.position)} {side}
                   </Text>
-                  <Text> {formatCurrency(pos.market_exposure)}</Text>
+                  <Text color="gray" dimColor> {formatCurrency(pos.market_exposure)}</Text>
+                  {pos.pnl !== undefined && (
+                    <Text color={pnlColor}> {formatPnl(pos.pnl)}</Text>
+                  )}
                 </Box>
               </Box>
             );
