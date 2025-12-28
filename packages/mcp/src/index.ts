@@ -32,6 +32,11 @@ import { registerGetPositions } from "./tools/get-positions.js";
 import { registerGetOrders } from "./tools/get-orders.js";
 import { registerCreateOrder } from "./tools/create-order.js";
 import { registerCancelOrder } from "./tools/cancel-order.js";
+import { registerBatchCancelOrders } from "./tools/batch-cancel-orders.js";
+
+// Fill and settlement tools
+import { registerGetFills } from "./tools/get-fills.js";
+import { registerGetSettlements } from "./tools/get-settlements.js";
 
 export const SERVER_NAME = "kalshi-mcp";
 export const SERVER_VERSION = "0.3.0";
@@ -112,6 +117,11 @@ export default function createServer(options: CreateServerOptions = {}) {
   registerGetOrders(server, ordersApi);
   registerCreateOrder(server, ordersApi, marketApi, portfolioApi);
   registerCancelOrder(server, ordersApi);
+  registerBatchCancelOrders(server, ordersApi);
+
+  // Register fill and settlement tools
+  registerGetFills(server, portfolioApi);
+  registerGetSettlements(server, portfolioApi);
 
   // Return the underlying server for Smithery
   return server.server;
