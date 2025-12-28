@@ -5,7 +5,7 @@
  * Handles placement, cancellation, and tracking of orders.
  */
 
-import type { OrdersApi } from "kalshi-typescript";
+import type { OrdersApi, Order } from "kalshi-typescript";
 import type {
   ManagedOrder,
   Side,
@@ -13,6 +13,47 @@ import type {
   OrderStatus,
   Quote,
 } from "./types.js";
+import { isRateLimitError } from "../rate-limiter.js";
+
+/** Kalshi order status values */
+type KalshiOrderStatus = "resting" | "canceled" | "executed" | "pending";
+
+/**
+ * Sleep for a given number of milliseconds
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Retry a function with exponential backoff on rate limit errors
+ */
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  options: { maxRetries?: number; initialDelayMs?: number; maxDelayMs?: number } = {}
+): Promise<T> {
+  const { maxRetries = 3, initialDelayMs = 1000, maxDelayMs = 10000 } = options;
+  let lastError: unknown;
+  let delay = initialDelayMs;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+
+      if (!isRateLimitError(error) || attempt === maxRetries) {
+        throw error;
+      }
+
+      console.log(`[OrderManager] Rate limited, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
+      await sleep(delay);
+      delay = Math.min(delay * 2, maxDelayMs);
+    }
+  }
+
+  throw lastError;
+}
 
 /** Input for creating a new order */
 export interface CreateOrderInput {
@@ -247,13 +288,31 @@ export class OrderManager {
       // Fallback to individual cancels if batch fails
       const errMsg = err instanceof Error ? err.message : String(err);
       console.warn(`[OrderManager] Batch cancel failed (${errMsg}), falling back to individual cancels`);
+
       let cancelledCount = 0;
       for (const orderId of orderIds) {
         try {
           await this.ordersApi.cancelOrder(orderId);
           cancelledCount++;
-        } catch {
-          // Order may already be filled or cancelled
+
+          // Small delay between individual cancels to avoid rate limiting
+          if (orderIds.length > 1) {
+            await sleep(200);
+          }
+        } catch (cancelErr) {
+          // If rate limited, wait longer before continuing
+          if (isRateLimitError(cancelErr)) {
+            console.log("[OrderManager] Rate limited on individual cancel, waiting 2s...");
+            await sleep(2000);
+            // Retry this one
+            try {
+              await this.ordersApi.cancelOrder(orderId);
+              cancelledCount++;
+            } catch {
+              // Give up on this order
+            }
+          }
+          // Order may already be filled or cancelled - continue
         }
       }
       return cancelledCount;
@@ -476,10 +535,244 @@ export class OrderManager {
     return removed;
   }
 
+  // ========== Reconciliation Methods ==========
+
+  /**
+   * Get order by Kalshi order ID (not client order ID)
+   */
+  getByKalshiId(kalshiOrderId: string): ManagedOrder | undefined {
+    for (const order of this.orders.values()) {
+      if (order.id === kalshiOrderId) {
+        return order;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Update order status when a fill is received
+   * Returns true if order was found and updated
+   */
+  onFill(kalshiOrderId: string, filledCount: number, totalOrderCount?: number): boolean {
+    const order = this.getByKalshiId(kalshiOrderId);
+    if (!order) {
+      // Order not managed by us (could be from previous session)
+      return false;
+    }
+
+    order.filledCount += filledCount;
+
+    // Determine if fully filled or partial
+    const originalCount = totalOrderCount ?? order.count;
+    if (order.filledCount >= originalCount) {
+      order.status = "filled";
+    } else {
+      order.status = "partial";
+    }
+
+    return true;
+  }
+
+  /**
+   * Import existing orders from Kalshi API (for reconciliation on startup)
+   * These are orders that existed before this process started
+   */
+  importFromKalshi(kalshiOrders: Order[]): number {
+    let imported = 0;
+
+    for (const ko of kalshiOrders) {
+      if (!ko.order_id || !ko.ticker) continue;
+
+      // Skip if we already have this order
+      if (this.getByKalshiId(ko.order_id)) continue;
+
+      // Create a managed order from Kalshi order
+      const clientOrderId = ko.client_order_id ?? `imported-${ko.order_id}`;
+
+      // Kalshi uses remaining_count for how many are left
+      const remainingCount = ko.remaining_count ?? 0;
+      // We need to estimate original count - if not available, use remaining as approximation
+      const originalCount = remainingCount; // Best we can do without full order history
+
+      const managedOrder: ManagedOrder = {
+        id: ko.order_id,
+        clientOrderId,
+        ticker: ko.ticker,
+        side: (ko.side as Side) ?? "yes",
+        action: (ko.action as Action) ?? "buy",
+        price: ko.yes_price ?? ko.no_price ?? 0,
+        count: originalCount,
+        status: this.mapKalshiStatus(ko.status),
+        createdAt: ko.created_time ? new Date(ko.created_time) : new Date(),
+        filledCount: 0, // For imported orders, assume not filled yet (they're resting)
+      };
+
+      this.orders.set(clientOrderId, managedOrder);
+      imported++;
+    }
+
+    return imported;
+  }
+
+  /**
+   * Get stale orders (open orders older than maxAgeMs)
+   */
+  getStaleOrders(maxAgeMs: number): ManagedOrder[] {
+    const now = Date.now();
+    const activeStatuses: OrderStatus[] = ["pending", "open", "partial"];
+    const stale: ManagedOrder[] = [];
+
+    for (const order of this.orders.values()) {
+      if (!activeStatuses.includes(order.status)) continue;
+      if (now - order.createdAt.getTime() > maxAgeMs) {
+        stale.push(order);
+      }
+    }
+
+    return stale;
+  }
+
+  /**
+   * Get orders that are far from current fair value
+   * @param ticker - Market ticker
+   * @param fairValue - Current fair value (mid price or microprice)
+   * @param maxDistanceCents - Max distance from fair value before considered stale
+   */
+  getOffPriceOrders(ticker: string, fairValue: number, maxDistanceCents: number): ManagedOrder[] {
+    const activeStatuses: OrderStatus[] = ["pending", "open", "partial"];
+    const offPrice: ManagedOrder[] = [];
+
+    for (const order of this.orders.values()) {
+      if (order.ticker !== ticker) continue;
+      if (!activeStatuses.includes(order.status)) continue;
+
+      const distance = Math.abs(order.price - fairValue);
+      if (distance > maxDistanceCents) {
+        offPrice.push(order);
+      }
+    }
+
+    return offPrice;
+  }
+
+  /**
+   * Sync with Kalshi API - fetch current order states and update local tracking
+   * Call this periodically or on reconnect to ensure consistency
+   */
+  async syncWithKalshi(tickers?: string[]): Promise<{
+    synced: number;
+    cancelled: number;
+    updated: number;
+  }> {
+    try {
+      // Fetch open orders from Kalshi with retry on rate limit
+      const response = await retryWithBackoff(
+        () => this.ordersApi.getOrders(
+          undefined, // ticker - fetch all, filter locally
+          undefined, // event_ticker
+          undefined, // min_ts
+          undefined, // max_ts
+          "resting", // status - only resting orders
+          100        // limit
+        ),
+        { maxRetries: 3, initialDelayMs: 2000 }
+      );
+
+      const kalshiOrders = response.data?.orders ?? [];
+      let synced = 0;
+      let updated = 0;
+
+      for (const ko of kalshiOrders) {
+        if (!ko.order_id || !ko.ticker) continue;
+
+        // Filter by tickers if provided
+        if (tickers && !tickers.includes(ko.ticker)) continue;
+
+        // Check if we have this order
+        const existing = this.getByKalshiId(ko.order_id);
+
+        if (existing) {
+          // Update status if changed
+          const newStatus = this.mapKalshiStatus(ko.status);
+          if (existing.status !== newStatus) {
+            existing.status = newStatus;
+            updated++;
+          }
+        } else {
+          // Import the order
+          this.importFromKalshi([ko]);
+          synced++;
+        }
+      }
+
+      return { synced, cancelled: 0, updated };
+    } catch (error) {
+      console.error("[OrderManager] syncWithKalshi failed:", error);
+      return { synced: 0, cancelled: 0, updated: 0 };
+    }
+  }
+
+  /**
+   * Cancel all open orders and clear local state (for clean restart)
+   * Use this on startup to ensure no orphan orders
+   * 
+   * Includes retry logic for rate limit (429) errors
+   */
+  async cancelAllAndClear(tickers?: string[]): Promise<number> {
+    try {
+      // Fetch all resting orders from Kalshi with retry on rate limit
+      const response = await retryWithBackoff(
+        () => this.ordersApi.getOrders(
+          undefined, // ticker
+          undefined, // event_ticker
+          undefined, // min_ts
+          undefined, // max_ts
+          "resting", // status
+          100        // limit
+        ),
+        { maxRetries: 3, initialDelayMs: 2000 }
+      );
+
+      const kalshiOrders = response.data?.orders ?? [];
+      const orderIds: string[] = [];
+
+      for (const ko of kalshiOrders) {
+        if (!ko.order_id || !ko.ticker) continue;
+
+        // Filter by tickers if provided
+        if (tickers && !tickers.includes(ko.ticker)) continue;
+
+        orderIds.push(ko.order_id);
+      }
+
+      if (orderIds.length === 0) {
+        return 0;
+      }
+
+      // Batch cancel with retry on rate limit
+      const cancelled = await retryWithBackoff(
+        () => this.batchCancel(orderIds),
+        { maxRetries: 3, initialDelayMs: 2000 }
+      );
+
+      // Clear local state for these orders
+      for (const order of this.orders.values()) {
+        if (!tickers || tickers.includes(order.ticker)) {
+          order.status = "cancelled";
+        }
+      }
+
+      return cancelled;
+    } catch (error) {
+      console.error("[OrderManager] cancelAllAndClear failed:", error);
+      return 0;
+    }
+  }
+
   /**
    * Map Kalshi order status to our internal status
    */
-  private mapKalshiStatus(status?: string): OrderStatus {
+  private mapKalshiStatus(status?: string | KalshiOrderStatus): OrderStatus {
     switch (status?.toLowerCase()) {
       case "resting":
         return "open";

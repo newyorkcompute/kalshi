@@ -18,9 +18,18 @@ import {
   type OrderbookSnapshot,
   type OrderbookDelta,
 } from "@newyorkcompute/kalshi-core";
-import type { MarketApi, PortfolioApi } from "kalshi-typescript";
+import type { MarketApi, PortfolioApi, Market } from "kalshi-typescript";
 import { appendFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
+
+/** Cached market metadata (including expiry times) */
+interface MarketMetadata {
+  ticker: string;
+  closeTime: Date | null;
+  expirationTime: Date | null;
+  status: string;
+  lastFetched: number;
+}
 
 /** Ticker data from WebSocket (inner msg) */
 interface TickerData {
@@ -124,6 +133,14 @@ export class Bot {
   private lastSummaryTime: number = 0;
   private readonly SUMMARY_INTERVAL_MS = 60000; // Log summary every minute
 
+  // Market metadata cache (for expiry times)
+  private marketMetadata: Map<string, MarketMetadata> = new Map();
+  private readonly METADATA_CACHE_MS = 300_000; // 5 minutes
+
+  // Stale order enforcement
+  private lastStaleCheck: number = 0;
+  private readonly STALE_CHECK_INTERVAL_MS = 10_000; // Check every 10 seconds
+
   constructor(config: Config) {
     // Set up log file
     const logsDir = join(process.cwd(), "logs");
@@ -185,8 +202,15 @@ export class Bot {
       this.portfolioApi = createPortfolioApi(apiConfig);
       this.orderManager = new OrderManager(this.ordersApi);
 
+      // === P0: ORDER RECONCILIATION ON STARTUP ===
+      // Cancel any orphan orders from previous sessions for our markets
+      await this.reconcileOrdersOnStartup();
+
       // Sync existing positions from Kalshi
       await this.syncPositions();
+
+      // Fetch market metadata (including expiry times)
+      await this.fetchMarketMetadata();
 
       // Initialize WebSocket
       this.ws = new KalshiWsClient({
@@ -226,6 +250,9 @@ export class Bot {
           this.logToFile("Auto-resuming after risk cooldown");
           this.paused = false;
         }
+
+        // === P1: STALE ORDER ENFORCEMENT ===
+        await this.enforceStaleOrders();
 
         // Periodic summary
         this.maybePrintSummary();
@@ -364,6 +391,98 @@ export class Bot {
 
   private onDisconnect(): void {
     console.log("[Bot] WebSocket disconnected");
+  }
+
+  /**
+   * === P0: ORDER RECONCILIATION ON STARTUP ===
+   * Cancel any orphan orders from previous sessions for our markets
+   */
+  private async reconcileOrdersOnStartup(): Promise<void> {
+    if (!this.orderManager) return;
+
+    console.log("[Bot] 🔄 Reconciling orders on startup...");
+    this.logToFile("Order reconciliation started");
+
+    try {
+      // Cancel all resting orders for our configured markets
+      const cancelled = await this.orderManager.cancelAllAndClear(this.config.markets);
+
+      if (cancelled > 0) {
+        console.log(`[Bot] ✅ Cancelled ${cancelled} orphan orders from previous sessions`);
+        this.logToFile(`Cancelled ${cancelled} orphan orders`);
+      } else {
+        console.log("[Bot] ✅ No orphan orders found");
+        this.logToFile("No orphan orders found");
+      }
+    } catch (error) {
+      console.error("[Bot] ⚠️ Order reconciliation failed:", error);
+      this.logToFile(`Order reconciliation failed: ${error}`);
+      // Continue anyway - we'll manage new orders going forward
+    }
+  }
+
+  /**
+   * === P0: FETCH MARKET METADATA (including expiry times) ===
+   */
+  private async fetchMarketMetadata(): Promise<void> {
+    if (!this.marketApi) return;
+
+    console.log("[Bot] 📊 Fetching market metadata...");
+
+    for (const ticker of this.config.markets) {
+      try {
+        const response = await this.marketApi.getMarket(ticker);
+        const market = response.data?.market;
+
+        if (market) {
+          this.cacheMarketMetadata(market);
+          
+          const meta = this.marketMetadata.get(ticker);
+          if (meta?.closeTime) {
+            const timeToExpiry = Math.floor((meta.closeTime.getTime() - Date.now()) / 1000);
+            const hours = Math.floor(timeToExpiry / 3600);
+            const mins = Math.floor((timeToExpiry % 3600) / 60);
+            console.log(`   ${ticker}: closes in ${hours}h ${mins}m (status: ${meta.status})`);
+          } else {
+            console.log(`   ${ticker}: no close time (status: ${meta?.status ?? "unknown"})`);
+          }
+        }
+      } catch (error) {
+        console.error(`[Bot] ⚠️ Failed to fetch metadata for ${ticker}:`, error);
+      }
+    }
+  }
+
+  /**
+   * Cache market metadata from API response
+   */
+  private cacheMarketMetadata(market: Market): void {
+    const metadata: MarketMetadata = {
+      ticker: market.ticker ?? "",
+      closeTime: market.close_time ? new Date(market.close_time) : null,
+      expirationTime: market.expiration_time ? new Date(market.expiration_time) : null,
+      status: market.status ?? "unknown",
+      lastFetched: Date.now(),
+    };
+    this.marketMetadata.set(metadata.ticker, metadata);
+  }
+
+  /**
+   * Get time to expiry in seconds for a market
+   */
+  private getTimeToExpiry(ticker: string): number | undefined {
+    const meta = this.marketMetadata.get(ticker);
+    if (!meta) return undefined;
+
+    // Prefer close_time, fallback to expiration_time
+    const expiryTime = meta.closeTime ?? meta.expirationTime;
+    if (!expiryTime) return undefined;
+
+    const now = Date.now();
+    const timeToExpiry = Math.floor((expiryTime.getTime() - now) / 1000);
+
+    // Return undefined if already expired
+    return timeToExpiry > 0 ? timeToExpiry : undefined;
   }
 
   /**
@@ -556,6 +675,16 @@ export class Bot {
       timestamp: new Date(),
     };
 
+    // === P0: LINK FILL TO ORDER STATUS ===
+    // Update order manager so we know which orders are filled/partial
+    if (this.orderManager) {
+      const updated = this.orderManager.onFill(data.order_id, data.count);
+      if (!updated) {
+        // Order not found - could be from previous session or external
+        console.log(`[Bot] ℹ️ Fill for untracked order ${data.order_id.slice(0, 8)}...`);
+      }
+    }
+
     // Record for adverse selection tracking
     const bbo = this.orderbookManager.getBBO(ticker);
     const currentPrice = bbo?.midPrice ?? price;
@@ -661,6 +790,9 @@ export class Bot {
     const position = this.inventory.getPosition(ticker) ?? null;
     const mid = (data.bestBid + data.bestAsk) / 2;
 
+    // === P0: POPULATE timeToExpiry ===
+    const timeToExpiry = this.getTimeToExpiry(ticker);
+
     const snapshot: MarketSnapshot = {
       ticker,
       bestBid: data.bestBid,
@@ -674,6 +806,8 @@ export class Bot {
       askSize: bbo?.askSize,
       imbalance,
       adverseSelection,
+      // P0: Time to expiry for strategy decisions
+      timeToExpiry,
     };
 
     // Get quotes from strategy
@@ -735,6 +869,67 @@ export class Bot {
 
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * === P1: STALE ORDER ENFORCEMENT ===
+   * Cancel orders that are too old or too far from current fair value
+   */
+  private async enforceStaleOrders(): Promise<void> {
+    const now = Date.now();
+    
+    // Rate limit this check
+    if (now - this.lastStaleCheck < this.STALE_CHECK_INTERVAL_MS) {
+      return;
+    }
+    this.lastStaleCheck = now;
+
+    if (!this.orderManager || this.paused || this.risk.shouldHalt()) {
+      return;
+    }
+
+    const staleOrderMs = this.config.daemon.staleOrderMs;
+
+    // Check each market we're quoting
+    for (const ticker of this.config.markets) {
+      // Get current fair value
+      const ob = this.orderbookManager.getOrderbook(ticker);
+      const bbo = ob.getBBO();
+      if (!bbo) continue;
+
+      const fairValue = ob.getMicroprice() ?? bbo.midPrice;
+
+      // Find stale orders (by time)
+      const staleByTime = this.orderManager.getStaleOrders(staleOrderMs)
+        .filter(o => o.ticker === ticker);
+
+      // Find orders too far from fair value (> 5¢ off)
+      const staleByPrice = this.orderManager.getOffPriceOrders(ticker, fairValue, 5);
+
+      // Combine and dedupe
+      const orderIdsToCancel = new Set<string>();
+      for (const order of [...staleByTime, ...staleByPrice]) {
+        if (order.id) {
+          orderIdsToCancel.add(order.id);
+        }
+      }
+
+      if (orderIdsToCancel.size > 0) {
+        try {
+          const cancelled = await this.orderManager.batchCancel(Array.from(orderIdsToCancel));
+          
+          if (cancelled > 0) {
+            console.log(`[Bot] 🧹 Cancelled ${cancelled} stale orders for ${ticker}`);
+            this.logToFile(`Stale order cleanup: ${cancelled} orders for ${ticker}`);
+            
+            // Invalidate quote cache to re-quote fresh
+            this.lastSentQuote.delete(ticker);
+          }
+        } catch (error) {
+          console.error(`[Bot] ⚠️ Failed to cancel stale orders for ${ticker}:`, error);
+        }
+      }
+    }
   }
 
   /**
