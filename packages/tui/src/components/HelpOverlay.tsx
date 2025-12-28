@@ -1,6 +1,6 @@
 /**
  * Help Overlay Component
- * Shows keyboard shortcuts as a centered modal overlay
+ * Full-screen modal showing keyboard shortcuts
  */
 
 import { Box, Text } from 'ink';
@@ -19,26 +19,19 @@ const SHORTCUTS = [
 ];
 
 export function HelpOverlay({ width, height }: HelpOverlayProps) {
-  const modalWidth = 48;
-  const modalHeight = SHORTCUTS.length + 6;
-  
-  // Calculate centering offsets
-  const topPadding = Math.max(0, Math.floor((height - modalHeight) / 2));
-  const leftPadding = Math.max(0, Math.floor((width - modalWidth) / 2));
-
   return (
     <Box
-      position="absolute"
-      marginTop={topPadding}
-      marginLeft={leftPadding}
       flexDirection="column"
+      alignItems="center"
+      justifyContent="center"
+      width={width}
+      height={height}
     >
       <Box
         flexDirection="column"
         borderStyle="double"
         borderColor="cyan"
-        width={modalWidth}
-        paddingX={2}
+        paddingX={4}
         paddingY={1}
       >
         {/* Title */}
@@ -50,8 +43,10 @@ export function HelpOverlay({ width, height }: HelpOverlayProps) {
 
         {/* Shortcuts list */}
         {SHORTCUTS.map(({ key, description }) => (
-          <Box key={key} justifyContent="space-between" width={modalWidth - 6}>
-            <Text color="yellow" bold>{key}</Text>
+          <Box key={key} gap={2}>
+            <Box width={12}>
+              <Text color="yellow" bold>{key}</Text>
+            </Box>
             <Text color="white">{description}</Text>
           </Box>
         ))}

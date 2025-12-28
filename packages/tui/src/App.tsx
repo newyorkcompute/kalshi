@@ -167,6 +167,11 @@ export function App() {
   // Get selected market for orderbook/chart
   const selectedMarket = markets[selectedIndex] ?? null;
 
+  // Show help overlay as full-screen takeover
+  if (showHelp) {
+    return <HelpOverlay width={width} height={height} />;
+  }
+
   return (
     <Box flexDirection="column" width={width} height={height}>
       {/* Header */}
@@ -223,9 +228,6 @@ export function App() {
 
       {/* Footer */}
       <Footer />
-
-      {/* Help Overlay */}
-      {showHelp && <HelpOverlay width={width} height={height} />}
     </Box>
   );
 }
