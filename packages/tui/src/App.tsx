@@ -167,7 +167,7 @@ export function App() {
   // Get selected market for orderbook/chart
   const selectedMarket = markets[selectedIndex] ?? null;
 
-  // Show help overlay as full-screen takeover
+  // Show help overlay (with dimmed background pattern)
   if (showHelp) {
     return <HelpOverlay width={width} height={height} />;
   }
