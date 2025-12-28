@@ -1,5 +1,16 @@
 # @newyorkcompute/kalshi-tui
 
+## 0.7.0
+
+### Minor Changes
+
+- [#65](https://github.com/newyorkcompute/kalshi/pull/65) [`af6a100`](https://github.com/newyorkcompute/kalshi/commit/af6a1006556198030bd37e756b6375e61d0a8063) Thanks [@siddharthkul](https://github.com/siddharthkul)! - Add persistent config file and watchlist/favorites feature
+
+  - Config stored at `~/.kalshi-tui/config.json`
+  - Press `f` to toggle favorite on selected market
+  - Favorites shown with ★ and sorted to top
+  - Sort preference persists across sessions
+
 ## 0.6.0
 
 ### Minor Changes
