@@ -39,19 +39,20 @@ export function registerBatchCancelOrders(
     async (params: BatchCancelOrdersInput) => {
       try {
         const response = await ordersApi.batchCancelOrders({
-          order_ids: params.order_ids,
+          ids: params.order_ids,
         });
 
         const cancelledOrders = response.data.orders || [];
 
         // Format cancelled orders for readable output
-        const formattedOrders = cancelledOrders.map((order) => ({
-          order_id: order.order_id,
-          ticker: order.ticker,
-          side: order.side,
-          action: order.action,
-          status: order.status,
-          remaining_count: order.remaining_count,
+        const formattedOrders = cancelledOrders.map((item) => ({
+          order_id: item.order_id,
+          reduced_by: item.reduced_by,
+          ticker: item.order?.ticker,
+          side: item.order?.side,
+          action: item.order?.action,
+          status: item.order?.status,
+          error: item.error?.message,
         }));
 
         return {

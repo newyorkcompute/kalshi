@@ -46,14 +46,11 @@ describe("get_fills tool", () => {
         ticker: "KXBTC-25JAN03-B100500",
         side: "yes",
         action: "buy",
-        type: "limit",
         yes_price: 45,
         no_price: 55,
         count: 10,
         created_time: "2024-12-21T00:00:00Z",
         is_taker: true,
-        taker_fees: 5,
-        maker_fees: 0,
       },
     ];
 

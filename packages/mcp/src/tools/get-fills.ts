@@ -70,7 +70,6 @@ export function registerGetFills(server: McpServer, portfolioApi: PortfolioApi) 
           // Trade details
           side: fill.side,
           action: fill.action,
-          type: fill.type,
           // Pricing
           yes_price: fill.yes_price,
           no_price: fill.no_price,
@@ -79,8 +78,6 @@ export function registerGetFills(server: McpServer, portfolioApi: PortfolioApi) 
           created_time: fill.created_time,
           // Costs
           is_taker: fill.is_taker,
-          taker_fees: fill.taker_fees,
-          maker_fees: fill.maker_fees,
         }));
 
         // Calculate summary

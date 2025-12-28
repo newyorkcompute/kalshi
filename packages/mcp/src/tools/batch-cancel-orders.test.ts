@@ -42,19 +42,25 @@ describe("batch_cancel_orders tool", () => {
     const mockCancelledOrders = [
       {
         order_id: "order-123",
-        ticker: "KXBTC-25JAN03-B100500",
-        side: "yes",
-        action: "buy",
-        status: "canceled",
-        remaining_count: 0,
+        reduced_by: 10,
+        order: {
+          order_id: "order-123",
+          ticker: "KXBTC-25JAN03-B100500",
+          side: "yes",
+          action: "buy",
+          status: "canceled",
+        },
       },
       {
         order_id: "order-456",
-        ticker: "KXINX-25JAN03-B19500",
-        side: "no",
-        action: "sell",
-        status: "canceled",
-        remaining_count: 0,
+        reduced_by: 5,
+        order: {
+          order_id: "order-456",
+          ticker: "KXINX-25JAN03-B19500",
+          side: "no",
+          action: "sell",
+          status: "canceled",
+        },
       },
     ];
 
@@ -76,6 +82,7 @@ describe("batch_cancel_orders tool", () => {
     expect(parsed.requested_count).toBe(2);
     expect(parsed.cancelled_orders).toHaveLength(2);
     expect(parsed.cancelled_orders[0].order_id).toBe("order-123");
+    expect(parsed.cancelled_orders[0].reduced_by).toBe(10);
   });
 
   it("should call API with correct order IDs", async () => {
@@ -88,7 +95,7 @@ describe("batch_cancel_orders tool", () => {
     });
 
     expect(mockOrdersApi.batchCancelOrders).toHaveBeenCalledWith({
-      order_ids: ["order-1", "order-2", "order-3"],
+      ids: ["order-1", "order-2", "order-3"],
     });
   });
 
