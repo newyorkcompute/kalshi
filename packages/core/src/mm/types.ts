@@ -74,8 +74,12 @@ export interface Position {
   noContracts: number;
   /** Net exposure: yesContracts - noContracts */
   netExposure: number;
-  /** Total cost basis in cents */
+  /** Total cost basis in cents (legacy - sum of yesCostBasis + noCostBasis) */
   costBasis: number;
+  /** Cost basis for YES contracts in cents */
+  yesCostBasis: number;
+  /** Cost basis for NO contracts in cents */
+  noCostBasis: number;
   /** Unrealized PnL in cents */
   unrealizedPnL: number;
 }

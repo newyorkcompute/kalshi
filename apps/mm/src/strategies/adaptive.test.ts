@@ -92,6 +92,8 @@ describe("AdaptiveStrategy", () => {
           yesContracts: 10,
           noContracts: 0,
           costBasis: 500,
+          yesCostBasis: 500,
+          noCostBasis: 0,
           netExposure: 10, // LONG
           unrealizedPnL: 0,
         },
@@ -119,6 +121,8 @@ describe("AdaptiveStrategy", () => {
           yesContracts: 0,
           noContracts: 10,
           costBasis: 500,
+          yesCostBasis: 0,
+          noCostBasis: 500,
           netExposure: -10, // SHORT
           unrealizedPnL: 0,
         },
@@ -146,6 +150,8 @@ describe("AdaptiveStrategy", () => {
           yesContracts: 30,
           noContracts: 0,
           costBasis: 1500,
+          yesCostBasis: 1500,
+          noCostBasis: 0,
           netExposure: 30, // At maxInventorySkew
           unrealizedPnL: 0,
         },
