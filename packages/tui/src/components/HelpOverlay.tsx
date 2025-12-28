@@ -1,6 +1,6 @@
 /**
  * Help Overlay Component
- * Modal overlay with dimmed background
+ * Clean full-screen help modal
  */
 
 import { Box, Text } from 'ink';
@@ -19,62 +19,41 @@ const SHORTCUTS = [
 ];
 
 export function HelpOverlay({ width, height }: HelpOverlayProps) {
-  const modalWidth = 52;
-  const modalHeight = SHORTCUTS.length + 6;
-  
-  // Calculate centering
-  const topPad = Math.floor((height - modalHeight) / 2);
-  const leftPad = Math.floor((width - modalWidth) / 2);
-
-  // Create dimmed background rows
-  const bgRows = Array(height).fill(null);
-
   return (
-    <Box flexDirection="column" width={width} height={height}>
-      {/* Dimmed background overlay */}
-      {bgRows.map((_, i) => (
-        <Box key={i} width={width}>
-          <Text color="gray" dimColor>
-            {'░'.repeat(width)}
+    <Box
+      flexDirection="column"
+      alignItems="center"
+      justifyContent="center"
+      width={width}
+      height={height}
+    >
+      <Box
+        flexDirection="column"
+        borderStyle="double"
+        borderColor="cyan"
+        paddingX={4}
+        paddingY={1}
+      >
+        {/* Title */}
+        <Box justifyContent="center" marginBottom={1}>
+          <Text color="cyan" bold>
+            ⌨️  KEYBOARD SHORTCUTS
           </Text>
         </Box>
-      ))}
-      
-      {/* Modal positioned absolutely on top */}
-      <Box
-        position="absolute"
-        marginTop={topPad}
-        marginLeft={leftPad}
-      >
-        <Box
-          flexDirection="column"
-          borderStyle="double"
-          borderColor="cyan"
-          width={modalWidth}
-          paddingX={3}
-          paddingY={1}
-        >
-          {/* Title */}
-          <Box justifyContent="center" marginBottom={1}>
-            <Text color="cyan" bold>
-              ⌨️  KEYBOARD SHORTCUTS
-            </Text>
-          </Box>
 
-          {/* Shortcuts list */}
-          {SHORTCUTS.map(({ key, description }) => (
-            <Box key={key}>
-              <Box width={14}>
-                <Text color="yellow" bold>{key}</Text>
-              </Box>
-              <Text color="white">{description}</Text>
+        {/* Shortcuts list */}
+        {SHORTCUTS.map(({ key, description }) => (
+          <Box key={key}>
+            <Box width={14}>
+              <Text color="yellow" bold>{key}</Text>
             </Box>
-          ))}
-
-          {/* Footer hint */}
-          <Box justifyContent="center" marginTop={1}>
-            <Text color="gray">Press any key to close</Text>
+            <Text color="white">{description}</Text>
           </Box>
+        ))}
+
+        {/* Footer hint */}
+        <Box justifyContent="center" marginTop={1}>
+          <Text color="gray" dimColor>Press any key to close</Text>
         </Box>
       </Box>
     </Box>
