@@ -34,3 +34,11 @@ apps/mm/config.yaml
 
 # Coverage
 coverage/
+
+# Local planning files
+ARCHITECTURE.md
+CODE_REVIEW.md
+FEATURE_IDEAS.md
+SID_TODO.md
+TODO.md
+TUI_ROADMAP.md

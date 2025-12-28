@@ -54,7 +54,7 @@ export const DEMO_BASE_PATH = "https://demo-api.kalshi.co/trade-api/v2";
  */
 export function getKalshiConfig(): KalshiConfig {
   const apiKey = process.env.KALSHI_API_KEY;
-  const privateKey = process.env.KALSHI_PRIVATE_KEY;
+  let privateKey = process.env.KALSHI_PRIVATE_KEY;
   const basePath = process.env.KALSHI_BASE_PATH || DEFAULT_BASE_PATH;
 
   if (!apiKey) {
@@ -63,6 +63,11 @@ export function getKalshiConfig(): KalshiConfig {
 
   if (!privateKey) {
     throw new Error("KALSHI_PRIVATE_KEY environment variable is required");
+  }
+
+  // Handle escaped newlines from .env files
+  if (privateKey.includes("\\n")) {
+    privateKey = privateKey.replace(/\\n/g, "\n");
   }
 
   return { apiKey, privateKey, basePath };
