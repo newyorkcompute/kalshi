@@ -1,6 +1,6 @@
 {
   "name": "@newyorkcompute/kalshi-mm",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Market maker daemon for Kalshi prediction markets",
   "author": "NewYorkCompute",
   "license": "MIT",
@@ -46,4 +46,3 @@
     "vitest": "^3.2.3"
   }
 }
-
