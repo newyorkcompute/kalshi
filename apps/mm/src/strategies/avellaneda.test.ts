@@ -81,6 +81,8 @@ describe("AvellanedaStoikovStrategy", () => {
           ticker: "TEST-MARKET",
           netExposure: 20, 
           costBasis: 1000,
+          yesCostBasis: 1000,
+          noCostBasis: 0,
           yesContracts: 20,
           noContracts: 0,
           unrealizedPnL: 0,
@@ -107,7 +109,9 @@ describe("AvellanedaStoikovStrategy", () => {
         position: { 
           ticker: "TEST-MARKET",
           netExposure: -20, 
-          costBasis: -1000,
+          costBasis: 1000,
+          yesCostBasis: 0,
+          noCostBasis: 1000,
           yesContracts: 0,
           noContracts: 20,
           unrealizedPnL: 0,
@@ -214,6 +218,8 @@ describe("AvellanedaStoikovStrategy", () => {
           ticker: "TEST-MARKET",
           netExposure: 50, // At max
           costBasis: 2500,
+          yesCostBasis: 2500,
+          noCostBasis: 0,
           yesContracts: 50,
           noContracts: 0,
           unrealizedPnL: 0,
@@ -238,7 +244,9 @@ describe("AvellanedaStoikovStrategy", () => {
         position: { 
           ticker: "TEST-MARKET",
           netExposure: -50, // At max short
-          costBasis: -2500,
+          costBasis: 2500,
+          yesCostBasis: 0,
+          noCostBasis: 2500,
           yesContracts: 0,
           noContracts: 50,
           unrealizedPnL: 0,
@@ -264,6 +272,8 @@ describe("AvellanedaStoikovStrategy", () => {
           ticker: "TEST-MARKET",
           netExposure: 0,
           costBasis: 0,
+          yesCostBasis: 0,
+          noCostBasis: 0,
           yesContracts: 0,
           noContracts: 0,
           unrealizedPnL: 0,
@@ -356,6 +366,8 @@ describe("AvellanedaStoikovStrategy", () => {
           ticker: "TEST-MARKET",
           netExposure: 100, // Very long
           costBasis: 5000,
+          yesCostBasis: 5000,
+          noCostBasis: 0,
           yesContracts: 100,
           noContracts: 0,
           unrealizedPnL: 0,

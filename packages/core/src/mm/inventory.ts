@@ -2,6 +2,14 @@
  * Inventory Tracker
  *
  * Tracks positions and PnL for market making.
+ * 
+ * P&L CALCULATION MODEL:
+ * - Track cost basis separately for YES and NO contracts
+ * - When BUYING: Add to cost basis (you're paying to acquire)
+ * - When SELLING: 
+ *   - If closing existing position: Realize P&L = (sell price - avg cost) × contracts
+ *   - If opening new short: Record the proceeds as "short cost basis" (what you'll need to buy back)
+ * - Handle position flips (e.g., 3 LONG → sell 5 → 2 SHORT)
  */
 
 import type { Position, Fill, PnLSummary } from "./types.js";
@@ -21,22 +29,27 @@ export class InventoryTracker {
   onFill(fill: Fill): void {
     const position = this.getOrCreatePosition(fill.ticker);
 
+    // IMPORTANT: Calculate cost impact BEFORE updating position counts
+    // This is critical for correct P&L calculation
+    const costImpact = this.calculateCostImpact(fill, position);
+
     // Calculate position change
     const contractChange = this.calculateContractChange(fill);
 
     // Update contracts
     if (fill.side === "yes") {
       position.yesContracts += contractChange;
+      position.yesCostBasis += costImpact.costBasisChange;
     } else {
       position.noContracts += contractChange;
+      position.noCostBasis += costImpact.costBasisChange;
     }
 
-    // Update net exposure
+    // Update net exposure and legacy costBasis
     position.netExposure = position.yesContracts - position.noContracts;
+    position.costBasis = position.yesCostBasis + position.noCostBasis;
 
-    // Update cost basis and realized PnL
-    const costImpact = this.calculateCostImpact(fill, position);
-    position.costBasis += costImpact.costBasisChange;
+    // Update realized P&L
     this.realizedPnL += costImpact.realizedPnL;
 
     // Update daily stats
@@ -136,12 +149,19 @@ export class InventoryTracker {
     }>
   ): void {
     for (const p of portfolioPositions) {
+      // Distribute cost basis between YES and NO based on contract counts
+      // This is an approximation - we don't know the actual split from portfolio data
+      const totalContracts = Math.abs(p.yesContracts) + Math.abs(p.noContracts);
+      const yesFraction = totalContracts > 0 ? Math.abs(p.yesContracts) / totalContracts : 0.5;
+      
       this.positions.set(p.ticker, {
         ticker: p.ticker,
         yesContracts: p.yesContracts,
         noContracts: p.noContracts,
         netExposure: p.yesContracts - p.noContracts,
         costBasis: p.costBasis,
+        yesCostBasis: p.costBasis * yesFraction,
+        noCostBasis: p.costBasis * (1 - yesFraction),
         unrealizedPnL: 0,
       });
     }
@@ -159,6 +179,8 @@ export class InventoryTracker {
         noContracts: 0,
         netExposure: 0,
         costBasis: 0,
+        yesCostBasis: 0,
+        noCostBasis: 0,
         unrealizedPnL: 0,
       };
       this.positions.set(ticker, position);
@@ -177,29 +199,78 @@ export class InventoryTracker {
 
   /**
    * Calculate cost basis change and realized PnL from a fill
+   * 
+   * IMPORTANT: This is called BEFORE position counts are updated!
+   * 
+   * Cases:
+   * 1. BUY when FLAT or LONG: Add to position, increase cost basis
+   * 2. BUY when SHORT: Close short position(s), realize P&L
+   * 3. SELL when FLAT or SHORT: Open short position, track "short proceeds" as cost basis
+   * 4. SELL when LONG: Close long position(s), realize P&L
+   * 
+   * Position flips are handled by splitting the fill into close + open parts.
    */
   private calculateCostImpact(
     fill: Fill,
     position: Position
   ): { costBasisChange: number; realizedPnL: number } {
-    const fillCost = fill.count * fill.price;
+    const currentContracts = fill.side === "yes" ? position.yesContracts : position.noContracts;
+    const currentCostBasis = fill.side === "yes" ? position.yesCostBasis : position.noCostBasis;
+    const fillValue = fill.count * fill.price;
 
     if (fill.action === "buy") {
-      // Buying increases cost basis
-      return { costBasisChange: fillCost, realizedPnL: 0 };
-    } else {
-      // Selling realizes PnL
-      // Average cost = costBasis / total contracts
-      const contracts =
-        fill.side === "yes" ? position.yesContracts : position.noContracts;
-      const avgCost =
-        contracts > 0 ? position.costBasis / (contracts + fill.count) : 0;
-      const realizedPnL = fill.count * (fill.price - avgCost);
+      // BUYING
+      if (currentContracts >= 0) {
+        // Case 1: FLAT or LONG → just add to cost basis
+        return { costBasisChange: fillValue, realizedPnL: 0 };
+      } else {
+        // Case 2: SHORT → buying closes short positions
+        const shortContracts = Math.abs(currentContracts);
+        const contractsToClose = Math.min(fill.count, shortContracts);
+        const contractsToOpen = fill.count - contractsToClose;
 
-      return {
-        costBasisChange: -fill.count * avgCost,
-        realizedPnL,
-      };
+        // Average "short cost" = what we received when shorting / contracts
+        // When shorting, we RECEIVED money, so closing means we PAY to buy back
+        // P&L = short proceeds - buy cost = (avg short price - buy price) × contracts
+        const avgShortPrice = shortContracts > 0 ? currentCostBasis / shortContracts : 0;
+        const realizedPnL = contractsToClose * (avgShortPrice - fill.price);
+
+        // Cost basis change:
+        // - Remove the closed portion from short cost basis
+        // - Add any new long position cost basis
+        const closedCostBasis = contractsToClose * avgShortPrice;
+        const newLongCostBasis = contractsToOpen * fill.price;
+        const costBasisChange = newLongCostBasis - closedCostBasis;
+
+        return { costBasisChange, realizedPnL };
+      }
+    } else {
+      // SELLING
+      if (currentContracts <= 0) {
+        // Case 3: FLAT or SHORT → opening/adding to short position
+        // When you sell short, you receive money. Track the proceeds as "cost basis"
+        // (what you'll need to pay back when you close)
+        return { costBasisChange: fillValue, realizedPnL: 0 };
+      } else {
+        // Case 4: LONG → selling closes long positions
+        const longContracts = currentContracts;
+        const contractsToClose = Math.min(fill.count, longContracts);
+        const contractsToOpenShort = fill.count - contractsToClose;
+
+        // Average cost of long position
+        const avgLongCost = longContracts > 0 ? currentCostBasis / longContracts : 0;
+        // P&L = sell proceeds - buy cost = (sell price - avg cost) × contracts
+        const realizedPnL = contractsToClose * (fill.price - avgLongCost);
+
+        // Cost basis change:
+        // - Remove the closed portion from long cost basis
+        // - Add any new short position "cost basis" (the proceeds)
+        const closedCostBasis = contractsToClose * avgLongCost;
+        const newShortCostBasis = contractsToOpenShort * fill.price;
+        const costBasisChange = newShortCostBasis - closedCostBasis;
+
+        return { costBasisChange, realizedPnL };
+      }
     }
   }
 }
