@@ -31,3 +31,13 @@ export { InventoryTracker } from "./inventory.js";
 // Risk Manager
 export { RiskManager, DEFAULT_RISK_LIMITS } from "./risk.js";
 
+// Local Orderbook
+export {
+  LocalOrderbook,
+  OrderbookManager,
+  type PriceLevel,
+  type OrderbookSnapshot,
+  type OrderbookDelta,
+  type BBO,
+} from "./orderbook.js";
+
