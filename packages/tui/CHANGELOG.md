@@ -1,5 +1,14 @@
 # @newyorkcompute/kalshi-tui
 
+## 0.8.0
+
+### Minor Changes
+
+- [#67](https://github.com/newyorkcompute/kalshi/pull/67) [`44d88a6`](https://github.com/newyorkcompute/kalshi/commit/44d88a6eaa039d71b0143c41c8874341b273c6a1) Thanks [@siddharthkul](https://github.com/siddharthkul)! - Add position P&L display
+
+  - Positions panel now shows unrealized P&L per position
+  - Total P&L shown in positions header (green/red)
+
 ## 0.7.0
 
 ### Minor Changes
