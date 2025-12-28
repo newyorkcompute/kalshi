@@ -31,9 +31,11 @@ interface Position {
   ticker: string;
   position: number;
   market_exposure: number;
+  /** Realized P&L from Kalshi API in cents */
+  realized_pnl?: number;
   /** Current market price (yes_bid) in cents */
   currentPrice?: number;
-  /** Unrealized P&L in cents */
+  /** P&L to display (realized from API) */
   pnl?: number;
 }
 
@@ -462,6 +464,7 @@ export function useKalshi(): UseKalshiReturn {
           ticker: p.ticker || '',
           position: p.position || 0,
           market_exposure: p.market_exposure || 0,
+          realized_pnl: p.realized_pnl || 0,
         }))
       );
       handleSuccess();
@@ -581,6 +584,7 @@ export function useKalshi(): UseKalshiReturn {
   const arbitrage = useMemo(() => calculateArbitrage(markets), [markets]);
 
   // Enrich positions with current prices and P&L
+  // Note: We use realized_pnl from Kalshi API directly as it's the most accurate
   const positionsWithPnl = useMemo(() => {
     // Create a price lookup map from markets
     const priceMap = new Map<string, number>();
@@ -593,32 +597,12 @@ export function useKalshi(): UseKalshiReturn {
     return positions.map(pos => {
       const currentPrice = priceMap.get(pos.ticker);
       
-      if (currentPrice === undefined || pos.position === 0) {
-        return pos;
-      }
-
-      // Calculate average cost per contract (in cents)
-      // market_exposure is the amount at risk
-      const avgCost = pos.market_exposure / Math.abs(pos.position);
-      
-      // Calculate P&L based on position side
-      let pnl: number;
-      if (pos.position > 0) {
-        // YES position: profit if price goes up
-        // Current value = currentPrice per contract
-        // Cost = avgCost per contract
-        pnl = (currentPrice - avgCost) * pos.position;
-      } else {
-        // NO position: profit if price goes down
-        // NO value = (100 - currentPrice) per contract
-        // Cost = avgCost per contract
-        pnl = ((100 - currentPrice) - avgCost) * Math.abs(pos.position);
-      }
-
+      // Use realized_pnl from Kalshi API - this is the actual P&L from closed trades
+      // Note: Kalshi tracks this accurately including partial fills
       return {
         ...pos,
         currentPrice,
-        pnl: Math.round(pnl),
+        pnl: pos.realized_pnl || 0,
       };
     });
   }, [positions, markets]);
