@@ -1,5 +1,17 @@
 # @newyorkcompute/kalshi-core
 
+## 0.6.1
+
+### Patch Changes
+
+- [#86](https://github.com/newyorkcompute/kalshi/pull/86) [`1e532b9`](https://github.com/newyorkcompute/kalshi/commit/1e532b919d0a4e01d571a0adde42ebcb5d0a2bca) Thanks [@siddharthkul](https://github.com/siddharthkul)! - Fix P&L calculation bug in InventoryTracker
+
+  - Track cost basis separately for YES and NO contracts (yesCostBasis, noCostBasis)
+  - Calculate cost impact BEFORE updating position counts (was the root cause of wrong P&L)
+  - Handle position flips correctly (long→short and short→long)
+  - Handle short selling P&L correctly (proceeds - buy-back cost)
+  - Add comprehensive P&L calculation tests
+
 ## 0.6.0
 
 ### Minor Changes
