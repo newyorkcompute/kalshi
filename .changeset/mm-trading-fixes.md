@@ -1,6 +1,5 @@
 ---
 "@newyorkcompute/kalshi-core": minor
-"@newyorkcompute/kalshi-mm": minor
 ---
 
 P0/P1 Trading Fixes for Market Maker
