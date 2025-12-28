@@ -106,8 +106,8 @@ export function App() {
 
   // Handle keyboard input
   useInput((input, key) => {
-    // Toggle help overlay with '?'
-    if (input === '?') {
+    // Toggle help overlay with '?' or 'h'
+    if (input === '?' || input === 'h') {
       setShowHelp(prev => !prev);
       return;
     }

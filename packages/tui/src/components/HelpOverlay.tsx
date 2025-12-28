@@ -14,7 +14,7 @@ const SHORTCUTS = [
   { key: '↑ / ↓', description: 'Navigate markets' },
   { key: 's', description: 'Cycle sort (volume → 24h → OI → price)' },
   { key: 'f', description: 'Toggle favorite ★' },
-  { key: '?', description: 'Toggle this help' },
+  { key: 'h / ?', description: 'Toggle this help' },
   { key: 'q', description: 'Quit' },
 ];
 
