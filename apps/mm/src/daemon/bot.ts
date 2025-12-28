@@ -22,6 +22,22 @@ import type { MarketApi, PortfolioApi, Market } from "kalshi-typescript";
 import { appendFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 
+/** Format timestamp for logs: HH:MM:SS */
+function ts(): string {
+  const now = new Date();
+  return now.toLocaleTimeString('en-US', { 
+    hour12: false, 
+    hour: '2-digit', 
+    minute: '2-digit', 
+    second: '2-digit' 
+  });
+}
+
+/** Log with timestamp prefix */
+function log(tag: string, message: string): void {
+  console.log(`[${ts()}] [${tag}] ${message}`);
+}
+
 /** Cached market metadata (including expiry times) */
 interface MarketMetadata {
   ticker: string;
@@ -165,10 +181,10 @@ export class Bot {
     this.drawdownManager = new DrawdownManager();
     this.circuitBreaker = new CircuitBreaker();
 
-    console.log(`[Bot] Strategy: ${this.strategy.name}`);
-    console.log(`[Bot] Mode: ${config.kalshi.demo ? "DEMO" : "PRODUCTION"}`);
-    console.log(`[Bot] Markets: ${config.markets.join(", ")}`);
-    console.log(`[Bot] Log file: ${this.logFile}`);
+    log("Bot", `Strategy: ${this.strategy.name}`);
+    log("Bot", `Mode: ${config.kalshi.demo ? "DEMO" : "PRODUCTION"}`);
+    log("Bot", `Markets: ${config.markets.join(", ")}`);
+    log("Bot", `Log file: ${this.logFile}`);
 
     // Log startup
     this.logToFile(`=== BOT STARTED ===`);
@@ -384,7 +400,7 @@ export class Bot {
     if (this.ws) {
       this.ws.subscribe(["ticker", "orderbook_delta"], this.config.markets);
       this.ws.subscribe(["fill"]); // Authenticated channel for our fills
-      console.log(`[Bot] Subscribed to: ${this.config.markets.join(", ")}`);
+      log("Bot", `Subscribed to: ${this.config.markets.join(", ")}`);
       console.log("[Bot] Waiting for market data...");
     }
   }
@@ -408,7 +424,7 @@ export class Bot {
       const cancelled = await this.orderManager.cancelAllAndClear(this.config.markets);
 
       if (cancelled > 0) {
-        console.log(`[Bot] ✅ Cancelled ${cancelled} orphan orders from previous sessions`);
+        log("Bot", `✅ Cancelled ${cancelled} orphan orders from previous sessions`);
         this.logToFile(`Cancelled ${cancelled} orphan orders`);
       } else {
         console.log("[Bot] ✅ No orphan orders found");
@@ -524,7 +540,7 @@ export class Bot {
       this.inventory.initializeFromPortfolio(portfolioData);
 
       // Log synced positions
-      console.log(`[Bot] ✅ Synced ${relevantPositions.length} positions:`);
+      log("Bot", `✅ Synced ${relevantPositions.length} positions:`);
       for (const p of relevantPositions) {
         const pos = p.position;
         const side = pos > 0 ? "YES" : "NO";
@@ -538,7 +554,7 @@ export class Bot {
         !this.config.markets.includes(p.ticker) && p.position !== 0
       );
       if (otherPositions.length > 0) {
-        console.log(`[Bot] ⚠️ You have ${otherPositions.length} positions in OTHER markets (not managed by this bot)`);
+        log("Bot", `⚠️ You have ${otherPositions.length} positions in OTHER markets (not managed by this bot)`);
       }
 
     } catch (error) {
@@ -570,8 +586,8 @@ export class Bot {
     const microprice = ob.getMicroprice();
     const imbalance = ob.getImbalance();
 
-    console.log(
-      `[Bot] 📊 ${ticker} ${bestBid}¢/${bestAsk}¢ (spread ${bbo.spread}¢) | ` +
+    log("Bot", 
+      `📊 ${ticker} ${bestBid}¢/${bestAsk}¢ (spread ${bbo.spread}¢) | ` +
       `μ=${microprice?.toFixed(1)}¢ imb=${(imbalance * 100).toFixed(0)}%`
     );
 
@@ -718,18 +734,18 @@ export class Bot {
     const posDir = netPos > 0 ? "LONG" : netPos < 0 ? "SHORT" : "FLAT";
 
     console.log(
-      `\n${emoji} FILL: ${data.action.toUpperCase()} ${data.count}x ${data.side.toUpperCase()} @ ${price}¢`
+      `\n[${ts()}] ${emoji} FILL: ${data.action.toUpperCase()} ${data.count}x ${data.side.toUpperCase()} @ ${price}¢`
     );
-    console.log(`   Market: ${ticker}`);
-    console.log(`   Cost: ${cost}¢ ($${(cost / 100).toFixed(2)})`);
-    console.log(`   Position: ${Math.abs(netPos)} contracts ${posDir}`);
+    console.log(`         Market: ${ticker}`);
+    console.log(`         Cost: ${cost}¢ ($${(cost / 100).toFixed(2)})`);
+    console.log(`         Position: ${Math.abs(netPos)} contracts ${posDir}`);
 
     if (realizedFromFill !== 0) {
       const pnlEmoji = realizedFromFill > 0 ? "💰" : "💸";
-      console.log(`   ${pnlEmoji} Realized P&L: ${realizedFromFill > 0 ? "+" : ""}${realizedFromFill}¢ ($${(realizedFromFill / 100).toFixed(2)})`);
+      console.log(`         ${pnlEmoji} Realized P&L: ${realizedFromFill > 0 ? "+" : ""}${realizedFromFill}¢ ($${(realizedFromFill / 100).toFixed(2)})`);
     }
 
-    console.log(`   📊 Session: ${pnlAfter.fillsToday} fills, ${pnlAfter.volumeToday} contracts, P&L: ${pnlAfter.realizedToday > 0 ? "+" : ""}${pnlAfter.realizedToday}¢\n`);
+    console.log(`         📊 Session: ${pnlAfter.fillsToday} fills, ${pnlAfter.volumeToday} contracts, P&L: ${pnlAfter.realizedToday > 0 ? "+" : ""}${pnlAfter.realizedToday}¢\n`);
 
     // Log to file
     this.logFillToFile(data, realizedFromFill, pnlAfter.realizedToday);
@@ -860,7 +876,7 @@ export class Bot {
         
         const adverseTag = adverseSelection ? " [ADVERSE]" : "";
         const scaleTag = positionMultiplier < 1.0 ? ` [${Math.round(positionMultiplier * 100)}%]` : "";
-        console.log(`[Bot] 📝 Quote: ${scaledQuote.ticker} ${scaledQuote.bidSize}x@${scaledQuote.bidPrice}¢ / ${scaledQuote.askSize}x@${scaledQuote.askPrice}¢${adverseTag}${scaleTag}`);
+        log("Bot", `📝 Quote: ${scaledQuote.ticker} ${scaledQuote.bidSize}x@${scaledQuote.bidPrice}¢ / ${scaledQuote.askSize}x@${scaledQuote.askPrice}¢${adverseTag}${scaleTag}`);
       } catch (error) {
         console.error(`[Bot] ❌ Quote failed for ${ticker}:`, error);
       }
@@ -919,7 +935,7 @@ export class Bot {
           const cancelled = await this.orderManager.batchCancel(Array.from(orderIdsToCancel));
           
           if (cancelled > 0) {
-            console.log(`[Bot] 🧹 Cancelled ${cancelled} stale orders for ${ticker}`);
+            log("Bot", `🧹 Cancelled ${cancelled} stale orders for ${ticker}`);
             this.logToFile(`Stale order cleanup: ${cancelled} orders for ${ticker}`);
             
             // Invalidate quote cache to re-quote fresh
@@ -992,7 +1008,7 @@ export class Bot {
     
     // Warn on slow updates (with batch APIs, should be ~100-150ms)
     if (ms > 200) {
-      console.warn(`[Bot] ⚠️ Slow quote update: ${ms}ms`);
+      console.warn(`[${ts()}] [Bot] ⚠️ Slow quote update: ${ms}ms`);
     }
   }
 
@@ -1051,20 +1067,20 @@ export class Bot {
 
     if (pnl.fillsToday === 0 && positions.length === 0) return;
 
-    console.log("\n📈 ─── SESSION SUMMARY ───────────────────────────");
-    console.log(`   Fills: ${pnl.fillsToday} | Volume: ${pnl.volumeToday} contracts`);
-    console.log(`   Realized P&L: ${pnl.realizedToday > 0 ? "+" : ""}${pnl.realizedToday}¢ ($${(pnl.realizedToday / 100).toFixed(2)})`);
+    console.log(`\n[${ts()}] 📈 ─── SESSION SUMMARY ────────────────────────`);
+    console.log(`         Fills: ${pnl.fillsToday} | Volume: ${pnl.volumeToday} contracts`);
+    console.log(`         Realized P&L: ${pnl.realizedToday > 0 ? "+" : ""}${pnl.realizedToday}¢ ($${(pnl.realizedToday / 100).toFixed(2)})`);
 
     if (positions.length > 0) {
-      console.log("   Positions:");
+      console.log("         Positions:");
       for (const pos of positions) {
         if (pos.netExposure !== 0) {
           const dir = pos.netExposure > 0 ? "LONG" : "SHORT";
-          console.log(`     ${pos.ticker}: ${Math.abs(pos.netExposure)} ${dir}`);
+          console.log(`           ${pos.ticker}: ${Math.abs(pos.netExposure)} ${dir}`);
         }
       }
     }
-    console.log("────────────────────────────────────────────────\n");
+    console.log("─────────────────────────────────────────────────\n");
 
     // Log to file
     this.logToFile(`SUMMARY: Fills=${pnl.fillsToday} Vol=${pnl.volumeToday} P&L=${pnl.realizedToday}¢`);
