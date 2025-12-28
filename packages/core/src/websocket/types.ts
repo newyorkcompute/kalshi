@@ -114,6 +114,17 @@ export interface OrderbookDeltaMessage extends BaseMessage {
   };
 }
 
+/** Orderbook snapshot (full state) */
+export interface OrderbookSnapshotMessage extends BaseMessage {
+  type: 'orderbook_snapshot';
+  msg: {
+    market_ticker: string;
+    market_id: string;
+    yes: [number, number][];  // [price, quantity][]
+    no: [number, number][];   // [price, quantity][]
+  };
+}
+
 /** Ticker update (market price change) */
 export interface TickerMessage extends BaseMessage {
   type: 'ticker';
@@ -162,6 +173,7 @@ export type WsMessage =
   | SubscribedMessage
   | ErrorMessage
   | OrderbookDeltaMessage
+  | OrderbookSnapshotMessage
   | TickerMessage
   | TradeMessage
   | FillMessage;
@@ -180,6 +192,8 @@ export interface KalshiWsEventHandlers {
   onError?: (error: Error) => void;
   /** Called when subscription is confirmed */
   onSubscribed?: (channel: SubscriptionChannel, tickers?: string[]) => void;
+  /** Called on orderbook snapshot (initial state) */
+  onOrderbookSnapshot?: (data: OrderbookSnapshotMessage['msg']) => void;
   /** Called on orderbook update */
   onOrderbookDelta?: (data: OrderbookDeltaMessage['msg']) => void;
   /** Called on ticker update */

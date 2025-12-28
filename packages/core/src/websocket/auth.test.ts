@@ -6,15 +6,12 @@ vi.mock('crypto', async () => {
   const actual = await vi.importActual<typeof crypto>('crypto');
   return {
     ...actual,
-    createSign: vi.fn(() => ({
-      update: vi.fn().mockReturnThis(),
-      end: vi.fn().mockReturnThis(),
-      sign: vi.fn(() => 'mocked-signature-base64'),
-    })),
+    createPrivateKey: vi.fn(() => 'mocked-key-object'),
+    sign: vi.fn(() => Buffer.from('mocked-signature-base64')),
   };
 });
 
-import { generateWsAuthHeaders, generateSignedWsUrl } from './auth.js';
+import { generateWsAuthHeaders, generateSignedWsUrl, WS_PATH } from './auth.js';
 
 describe('WebSocket Auth', () => {
   describe('generateWsAuthHeaders', () => {
@@ -44,6 +41,24 @@ describe('WebSocket Auth', () => {
       
       expect(headers['KALSHI-ACCESS-SIGNATURE']).toBeDefined();
       expect(headers['KALSHI-ACCESS-SIGNATURE'].length).toBeGreaterThan(0);
+    });
+
+    it('signs the correct message format (timestamp + GET + path)', () => {
+      const timestamp = 1703721600000;
+      generateWsAuthHeaders('test-key', 'fake-key-pem', timestamp);
+
+      // Verify crypto.createPrivateKey was called with the PEM
+      expect(crypto.createPrivateKey).toHaveBeenCalledWith('fake-key-pem');
+
+      // Verify crypto.sign was called with correct message format
+      expect(crypto.sign).toHaveBeenCalledWith(
+        'sha256',
+        Buffer.from(`${timestamp}GET${WS_PATH}`),
+        expect.objectContaining({
+          key: 'mocked-key-object',
+          padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+        })
+      );
     });
   });
 

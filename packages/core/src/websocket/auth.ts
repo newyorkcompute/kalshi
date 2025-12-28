@@ -7,37 +7,43 @@
 
 import * as crypto from 'crypto';
 
+/** WebSocket API path for signing */
+const WS_PATH = '/trade-api/ws/v2';
+
 /**
  * Generate authentication headers for WebSocket connection
  * 
+ * The message to sign is: timestamp + method + path
+ * e.g., "1703702400000GET/trade-api/ws/v2"
+ * 
  * @param apiKeyId - Your Kalshi API key ID
- * @param privateKey - Your private key in PEM format
+ * @param privateKeyPem - Your private key in PEM format
  * @param timestamp - Unix timestamp in milliseconds
  * @returns Headers object for WebSocket connection
  */
 export function generateWsAuthHeaders(
   apiKeyId: string,
-  privateKey: string,
+  privateKeyPem: string,
   timestamp: number = Date.now()
 ): Record<string, string> {
-  // The message to sign for WebSocket is typically the timestamp
   const timestampStr = timestamp.toString();
   
-  // Create signature using RSA-PSS with SHA-256
-  const sign = crypto.createSign('RSA-SHA256');
-  sign.update(timestampStr);
-  sign.end();
+  // Message format: timestamp + method + path
+  const message = timestampStr + 'GET' + WS_PATH;
+
+  // Convert PEM string to KeyObject (required for proper signing)
+  const privateKey = crypto.createPrivateKey(privateKeyPem);
   
-  // Sign with PSS padding
-  const signature = sign.sign({
+  // Sign using RSA-PSS with SHA-256
+  const signature = crypto.sign('sha256', Buffer.from(message), {
     key: privateKey,
     padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
     saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
-  }, 'base64');
+  });
 
   return {
     'KALSHI-ACCESS-KEY': apiKeyId,
-    'KALSHI-ACCESS-SIGNATURE': signature,
+    'KALSHI-ACCESS-SIGNATURE': signature.toString('base64'),
     'KALSHI-ACCESS-TIMESTAMP': timestampStr,
   };
 }
@@ -58,8 +64,7 @@ export function generateSignedWsUrl(
   apiKeyId: string,
   privateKey: string
 ): string {
-  const timestamp = Date.now();
-  const headers = generateWsAuthHeaders(apiKeyId, privateKey, timestamp);
+  const headers = generateWsAuthHeaders(apiKeyId, privateKey);
   
   const url = new URL(baseUrl);
   url.searchParams.set('api_key', headers['KALSHI-ACCESS-KEY']);
@@ -68,4 +73,7 @@ export function generateSignedWsUrl(
   
   return url.toString();
 }
+
+/** Export path for testing */
+export { WS_PATH };
 
