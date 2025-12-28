@@ -157,14 +157,18 @@ export interface TradeMessage extends BaseMessage {
 export interface FillMessage extends BaseMessage {
   type: 'fill';
   msg: {
-    trade_id: string;
+    trade_id?: string;
+    fill_id?: string;
     order_id: string;
-    market_ticker: string;
+    market_ticker?: string;
+    ticker?: string;
     side: 'yes' | 'no';
     action: 'buy' | 'sell';
     count: number;
-    price: number;
+    yes_price: number;
+    no_price: number;
     created_time: string;
+    is_taker?: boolean;
   };
 }
 

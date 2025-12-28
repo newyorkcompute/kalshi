@@ -36,14 +36,18 @@ interface TickerData {
 
 /** Fill data from WebSocket (inner msg) */
 interface FillData {
-  trade_id: string;
+  trade_id?: string;
+  fill_id?: string;
   order_id: string;
   market_ticker: string;
+  ticker?: string;  // Alternative field name
   side: "yes" | "no";
   action: "buy" | "sell";
   count: number;
-  price: number;
+  yes_price: number;
+  no_price: number;
   created_time: string;
+  is_taker?: boolean;
 }
 
 import type { Config } from "../config.js";
@@ -513,25 +517,29 @@ export class Bot {
   }
 
   private async onFill(data: FillData): Promise<void> {
+    // Get price based on side (yes_price for YES, no_price for NO)
+    const price = data.side === "yes" ? data.yes_price : data.no_price;
+    const ticker = data.market_ticker || data.ticker || "";
+    
     const fill = {
       orderId: data.order_id,
-      ticker: data.market_ticker,
+      ticker,
       side: data.side,
       action: data.action,
       count: data.count,
-      price: data.price,
+      price,
       timestamp: new Date(),
     };
 
     // Record for adverse selection tracking
-    const bbo = this.orderbookManager.getBBO(data.market_ticker);
-    const currentPrice = bbo?.midPrice ?? data.price;
+    const bbo = this.orderbookManager.getBBO(ticker);
+    const currentPrice = bbo?.midPrice ?? price;
     
     const fillRecord: FillRecord = {
-      ticker: data.market_ticker,
+      ticker,
       side: data.side,
       action: data.action,
-      price: data.price,
+      price,
       timestamp: Date.now(),
     };
     this.adverseDetector.recordFill(fillRecord, currentPrice);
@@ -543,7 +551,7 @@ export class Bot {
     this.inventory.onFill(fill);
 
     // Get position AFTER fill
-    const positionAfter = this.inventory.getPosition(data.market_ticker);
+    const positionAfter = this.inventory.getPosition(ticker);
     const pnlAfter = this.inventory.getPnLSummary();
 
     // Calculate realized P&L from this fill
@@ -551,14 +559,14 @@ export class Bot {
 
     // Format fill log with emoji and details
     const emoji = data.action === "buy" ? "🟢" : "🔴";
-    const cost = data.count * data.price;
+    const cost = data.count * price;
     const netPos = positionAfter?.netExposure ?? 0;
     const posDir = netPos > 0 ? "LONG" : netPos < 0 ? "SHORT" : "FLAT";
 
     console.log(
-      `\n${emoji} FILL: ${data.action.toUpperCase()} ${data.count}x ${data.side.toUpperCase()} @ ${data.price}¢`
+      `\n${emoji} FILL: ${data.action.toUpperCase()} ${data.count}x ${data.side.toUpperCase()} @ ${price}¢`
     );
-    console.log(`   Market: ${data.market_ticker}`);
+    console.log(`   Market: ${ticker}`);
     console.log(`   Cost: ${cost}¢ ($${(cost / 100).toFixed(2)})`);
     console.log(`   Position: ${Math.abs(netPos)} contracts ${posDir}`);
 
@@ -743,7 +751,9 @@ export class Bot {
    * Log a fill to file
    */
   private logFillToFile(data: FillData, realizedPnL: number, sessionPnL: number): void {
-    const msg = `FILL: ${data.action} ${data.count}x ${data.side} ${data.market_ticker} @ ${data.price}¢ | Realized: ${realizedPnL}¢ | Session P&L: ${sessionPnL}¢`;
+    const ticker = data.market_ticker || data.ticker || "";
+    const price = data.side === "yes" ? data.yes_price : data.no_price;
+    const msg = `FILL: ${data.action} ${data.count}x ${data.side} ${ticker} @ ${price}¢ | Realized: ${realizedPnL}¢ | Session P&L: ${sessionPnL}¢`;
     this.logToFile(msg);
   }
 
