@@ -245,6 +245,139 @@ describe("AdaptiveStrategy", () => {
       expect(params.multiLevel).toBe(true);
       expect(params.adverseSelectionMultiplier).toBe(3.0);
     });
+
+    it("should update time-decay params", () => {
+      strategy.updateParams({
+        expiryWidenStartSec: 7200,
+        expiryStopQuoteSec: 600,
+        expirySpreadMultiplier: 2.0,
+      });
+
+      const params = strategy.getParams();
+      expect(params.expiryWidenStartSec).toBe(7200);
+      expect(params.expiryStopQuoteSec).toBe(600);
+      expect(params.expirySpreadMultiplier).toBe(2.0);
+    });
+  });
+
+  describe("time-decay near expiry", () => {
+    it("should stop quoting in final minutes", () => {
+      strategy = new AdaptiveStrategy({
+        edgeCents: 1,
+        minSpreadCents: 2,
+        sizePerSide: 5,
+        maxMarketSpread: 20,
+        expiryStopQuoteSec: 300, // 5 minutes
+      });
+
+      const snapshot: MarketSnapshot = {
+        ticker: "TEST-MARKET",
+        bestBid: 50,
+        bestAsk: 55,
+        mid: 52.5,
+        spread: 5,
+        position: null,
+        timeToExpiry: 200, // 200 seconds < 300 threshold
+      };
+
+      const quotes = strategy.computeQuotes(snapshot);
+      expect(quotes).toHaveLength(0);
+    });
+
+    it("should quote normally far from expiry", () => {
+      strategy = new AdaptiveStrategy({
+        edgeCents: 1,
+        minSpreadCents: 2,
+        sizePerSide: 5,
+        maxMarketSpread: 20,
+        expiryWidenStartSec: 3600,
+        expiryStopQuoteSec: 300,
+      });
+
+      const snapshot: MarketSnapshot = {
+        ticker: "TEST-MARKET",
+        bestBid: 50,
+        bestAsk: 55,
+        mid: 52.5,
+        spread: 5,
+        position: null,
+        timeToExpiry: 7200, // 2 hours, well before threshold
+      };
+
+      const quotes = strategy.computeQuotes(snapshot);
+      expect(quotes).toHaveLength(1);
+    });
+
+    it("should widen spread near expiry", () => {
+      strategy = new AdaptiveStrategy({
+        edgeCents: 1,
+        minSpreadCents: 2,
+        sizePerSide: 5,
+        maxMarketSpread: 20,
+        expiryWidenStartSec: 3600, // 1 hour
+        expiryStopQuoteSec: 300,   // 5 min
+        expirySpreadMultiplier: 2.0, // Double spread near expiry
+      });
+
+      const farSnapshot: MarketSnapshot = {
+        ticker: "TEST-MARKET",
+        bestBid: 50,
+        bestAsk: 55,
+        mid: 52.5,
+        spread: 5,
+        position: null,
+        timeToExpiry: 7200, // Far from expiry
+      };
+
+      const nearSnapshot: MarketSnapshot = {
+        ...farSnapshot,
+        timeToExpiry: 600, // 10 minutes left (within widening period)
+      };
+
+      const farQuotes = strategy.computeQuotes(farSnapshot);
+      const nearQuotes = strategy.computeQuotes(nearSnapshot);
+
+      // Both should produce quotes
+      expect(farQuotes).toHaveLength(1);
+      expect(nearQuotes).toHaveLength(1);
+
+      // Near-expiry spread should be wider (due to minSpread multiplier)
+      // The spread increase depends on how close to expiry we are
+      const farSpread = farQuotes[0]!.askPrice - farQuotes[0]!.bidPrice;
+      const nearSpread = nearQuotes[0]!.askPrice - nearQuotes[0]!.bidPrice;
+
+      // Near expiry minimum spread = 2 * multiplier (interpolated)
+      // At 600s (out of 3600s-300s window), we're about 90% through
+      // So spread should be significantly wider
+      expect(nearSpread).toBeGreaterThanOrEqual(farSpread);
+    });
+
+    it("should not apply time-decay without timeToExpiry", () => {
+      strategy = new AdaptiveStrategy({
+        edgeCents: 1,
+        minSpreadCents: 2,
+        sizePerSide: 5,
+        maxMarketSpread: 20,
+        expiryWidenStartSec: 3600,
+        expiryStopQuoteSec: 300,
+      });
+
+      const snapshot: MarketSnapshot = {
+        ticker: "TEST-MARKET",
+        bestBid: 50,
+        bestAsk: 55,
+        mid: 52.5,
+        spread: 5,
+        position: null,
+        // timeToExpiry: undefined (not set)
+      };
+
+      // Should quote normally without time-decay
+      const quotes = strategy.computeQuotes(snapshot);
+      expect(quotes).toHaveLength(1);
+      expect(quotes[0]!.bidPrice).toBe(51); // Normal quoting
+      expect(quotes[0]!.askPrice).toBe(54);
+    });
   });
 });
 

@@ -30,12 +30,22 @@ strategy:
     useMicroprice: true        # Use size-weighted mid as fair value
     multiLevel: false          # Quote at multiple price levels
     adverseSelectionMultiplier: 2.0  # Widen spread when being picked off
+    # Time-decay near expiry:
+    expiryWidenStartSec: 3600  # Start widening spread 1 hour before expiry
+    expiryStopQuoteSec: 300    # Stop quoting 5 minutes before expiry
+    expirySpreadMultiplier: 1.5  # 1.5x spread near expiry
     
+  # Avellaneda-Stoikov: Optimal market making with inventory risk
   avellaneda:
     gamma: 0.1            # Risk aversion (higher = wider spreads)
-    k: 1.5                # Order arrival rate
-    sigma: 0.15           # Volatility estimate
+    k: 1.5                # Order arrival intensity
+    sigma: 0.15           # Volatility estimate (per hour)
+    T: 3600               # Time horizon in seconds (1 hour)
     maxPosition: 100      # Max inventory per side
+    sizePerSide: 5        # Contracts per order
+    minSpread: 2          # Floor spread (cents)
+    maxSpread: 20         # Cap spread (cents)
+    useMarketExpiry: true # Use market expiry time if available
 
 # Markets to quote (at least one required)
 markets:

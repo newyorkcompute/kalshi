@@ -7,10 +7,12 @@
 export { type Strategy, type MarketSnapshot, BaseStrategy } from "./base.js";
 export { SymmetricStrategy, type SymmetricParams } from "./symmetric.js";
 export { AdaptiveStrategy, type AdaptiveParams } from "./adaptive.js";
+export { AvellanedaStoikovStrategy, type AvellanedaStoikovParams } from "./avellaneda.js";
 
 import type { Strategy } from "./base.js";
 import { SymmetricStrategy } from "./symmetric.js";
 import { AdaptiveStrategy } from "./adaptive.js";
+import { AvellanedaStoikovStrategy } from "./avellaneda.js";
 import type { StrategyConfig } from "../config.js";
 
 /**
@@ -25,9 +27,7 @@ export function createStrategy(config: StrategyConfig): Strategy {
       return new AdaptiveStrategy(config.adaptive);
 
     case "avellaneda":
-      // TODO: Implement Avellaneda-Stoikov strategy
-      console.warn("Avellaneda strategy not yet implemented, using symmetric");
-      return new SymmetricStrategy(config.symmetric);
+      return new AvellanedaStoikovStrategy(config.avellaneda);
 
     default:
       throw new Error(`Unknown strategy: ${config.name}`);

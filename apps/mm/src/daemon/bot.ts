@@ -54,6 +54,7 @@ import type { Config } from "../config.js";
 import { getKalshiCredentials, getBasePath } from "../config.js";
 import { createStrategy, type Strategy, type MarketSnapshot } from "../strategies/index.js";
 import { AdverseSelectionDetector, type FillRecord } from "../adverse-selection.js";
+import { DrawdownManager, CircuitBreaker } from "../risk-controls.js";
 
 export interface BotState {
   running: boolean;
@@ -64,6 +65,8 @@ export interface BotState {
   positions: ReturnType<InventoryTracker["getAllPositions"]>;
   pnl: PnLSummary;
   risk: ReturnType<RiskManager["getStatus"]>;
+  drawdown: ReturnType<DrawdownManager["getStatus"]>;
+  circuitBreaker: ReturnType<CircuitBreaker["getStatus"]>;
 }
 
 /**
@@ -90,6 +93,10 @@ export class Bot {
   private strategy: Strategy;
   private orderbookManager: OrderbookManager;
   private adverseDetector: AdverseSelectionDetector;
+  
+  // Advanced risk controls
+  private drawdownManager: DrawdownManager;
+  private circuitBreaker: CircuitBreaker;
 
   // Market state (legacy - kept for ticker fallback)
   private marketData: Map<string, { bestBid: number; bestAsk: number }> =
@@ -136,6 +143,10 @@ export class Bot {
     this.strategy = createStrategy(config.strategy);
     this.orderbookManager = new OrderbookManager();
     this.adverseDetector = new AdverseSelectionDetector();
+    
+    // Initialize advanced risk controls with config (or defaults)
+    this.drawdownManager = new DrawdownManager();
+    this.circuitBreaker = new CircuitBreaker();
 
     console.log(`[Bot] Strategy: ${this.strategy.name}`);
     console.log(`[Bot] Mode: ${config.kalshi.demo ? "DEMO" : "PRODUCTION"}`);
@@ -207,6 +218,13 @@ export class Bot {
         // Periodic cleanup
         if (this.orderManager) {
           this.orderManager.cleanup();
+        }
+
+        // Check if circuit breaker has cooled down - auto-resume
+        if (this.paused && !this.circuitBreaker.isTriggered() && !this.drawdownManager.shouldHalt()) {
+          console.log("[Bot] 🟢 Risk controls cleared - auto-resuming");
+          this.logToFile("Auto-resuming after risk cooldown");
+          this.paused = false;
         }
 
         // Periodic summary
@@ -289,6 +307,8 @@ export class Bot {
       positions: this.inventory.getAllPositions(),
       pnl: this.inventory.getPnLSummary(),
       risk: this.risk.getStatus(this.inventory),
+      drawdown: this.drawdownManager.getStatus(),
+      circuitBreaker: this.circuitBreaker.getStatus(),
     };
   }
 
@@ -591,6 +611,28 @@ export class Bot {
     // Update risk with realized P&L
     this.risk.onFill(fill, realizedFromFill);
     
+    // === ADVANCED RISK CONTROLS ===
+    
+    // Update drawdown tracking
+    this.drawdownManager.updatePnL(pnlAfter.realizedToday);
+    const drawdownStatus = this.drawdownManager.getStatus();
+    if (drawdownStatus.shouldHalt) {
+      console.warn(`[Bot] 🛑 DRAWDOWN HALT: Drawdown ${drawdownStatus.drawdown}¢ exceeds limit. Pausing.`);
+      this.logToFile(`DRAWDOWN HALT: ${drawdownStatus.drawdown}¢`);
+      this.paused = true;
+    } else if (drawdownStatus.positionMultiplier < 1.0) {
+      console.log(`[Bot] ⚠️ Drawdown scaling: ${Math.round(drawdownStatus.positionMultiplier * 100)}% size (drawdown: ${drawdownStatus.drawdown}¢)`);
+    }
+    
+    // Update circuit breaker
+    const circuitTriggered = this.circuitBreaker.onFill(realizedFromFill);
+    if (circuitTriggered) {
+      const cbStatus = this.circuitBreaker.getStatus();
+      console.warn(`[Bot] 🚨 CIRCUIT BREAKER: ${cbStatus.reason}. Cooldown: ${Math.round((cbStatus.timeUntilReset ?? 0) / 1000)}s`);
+      this.logToFile(`CIRCUIT BREAKER: ${cbStatus.reason}`);
+      this.paused = true;
+    }
+    
     // Invalidate quote cache - position changed, need to re-quote with new inventory skew
     this.lastSentQuote.delete(ticker);
   }
@@ -636,39 +678,55 @@ export class Bot {
 
     // Get quotes from strategy
     const quotes = this.strategy.computeQuotes(snapshot);
+    
+    // Apply drawdown position scaling
+    const positionMultiplier = this.drawdownManager.getPositionMultiplier();
 
     // Place quotes (risk check happens inside updateQuote)
     for (const quote of quotes) {
+      // Apply drawdown scaling to sizes
+      const scaledQuote = {
+        ...quote,
+        bidSize: Math.max(1, Math.floor(quote.bidSize * positionMultiplier)),
+        askSize: Math.max(1, Math.floor(quote.askSize * positionMultiplier)),
+      };
+      
+      // If multiplier is 0, skip quoting entirely
+      if (positionMultiplier === 0) {
+        continue;
+      }
+      
       // QUOTE CACHING: Skip API call if quote is identical to last sent
-      const lastQuote = this.lastSentQuote.get(quote.ticker);
+      const lastQuote = this.lastSentQuote.get(scaledQuote.ticker);
       if (lastQuote && 
-          lastQuote.bidPrice === quote.bidPrice && 
-          lastQuote.askPrice === quote.askPrice &&
-          lastQuote.bidSize === quote.bidSize &&
-          lastQuote.askSize === quote.askSize) {
+          lastQuote.bidPrice === scaledQuote.bidPrice && 
+          lastQuote.askPrice === scaledQuote.askPrice &&
+          lastQuote.bidSize === scaledQuote.bidSize &&
+          lastQuote.askSize === scaledQuote.askSize) {
         // Quote unchanged - skip API call entirely
         continue;
       }
 
-      const check = this.risk.checkQuote(quote, this.inventory);
+      const check = this.risk.checkQuote(scaledQuote, this.inventory);
       if (!check.allowed) {
         console.log(`[Bot] ⚠️ Quote rejected: ${check.reason}`);
         continue;
       }
 
       try {
-        await this.orderManager.updateQuote(quote);
+        await this.orderManager.updateQuote(scaledQuote);
         
         // Cache the quote we just sent
-        this.lastSentQuote.set(quote.ticker, {
-          bidPrice: quote.bidPrice,
-          askPrice: quote.askPrice,
-          bidSize: quote.bidSize,
-          askSize: quote.askSize,
+        this.lastSentQuote.set(scaledQuote.ticker, {
+          bidPrice: scaledQuote.bidPrice,
+          askPrice: scaledQuote.askPrice,
+          bidSize: scaledQuote.bidSize,
+          askSize: scaledQuote.askSize,
         });
         
         const adverseTag = adverseSelection ? " [ADVERSE]" : "";
-        console.log(`[Bot] 📝 Quote: ${quote.ticker} ${quote.bidSize}x@${quote.bidPrice}¢ / ${quote.askSize}x@${quote.askPrice}¢${adverseTag}`);
+        const scaleTag = positionMultiplier < 1.0 ? ` [${Math.round(positionMultiplier * 100)}%]` : "";
+        console.log(`[Bot] 📝 Quote: ${scaledQuote.ticker} ${scaledQuote.bidSize}x@${scaledQuote.bidPrice}¢ / ${scaledQuote.askSize}x@${scaledQuote.askPrice}¢${adverseTag}${scaleTag}`);
       } catch (error) {
         console.error(`[Bot] ❌ Quote failed for ${ticker}:`, error);
       }
