@@ -61,7 +61,7 @@
     "dotenv": "^16.6.1",
     "eslint": "^9.28.0",
     "tsx": "^4.20.3",
-    "typescript-eslint": "^8.33.1",
+    "typescript-eslint": "^8.50.1",
     "vitest": "^3.2.3"
   }
 }
