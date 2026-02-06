@@ -52,6 +52,41 @@ describe("getCategoryProfile", () => {
     expect(profile.weight).toBe(0.4);
     expect(profile.label).toBe("Unknown");
   });
+
+  it("matches golf tickers via prefix", () => {
+    const profile = getCategoryProfile("", "KXPGA-WASTE-0206");
+    expect(profile.label).toBe("Sports");
+  });
+
+  it("matches soccer tickers via prefix", () => {
+    const profile = getCategoryProfile("", "KXEPL-MCI-ARS-0208");
+    expect(profile.label).toBe("Sports");
+  });
+
+  it("matches entertainment tickers via prefix", () => {
+    const profile = getCategoryProfile("", "KXPERFORMSUPERBOWL-LIX");
+    expect(profile.label).toBe("Entertainment");
+  });
+
+  it("matches politics tickers via prefix", () => {
+    const profile = getCategoryProfile("", "KXSENATE-CONFIRM-0301");
+    expect(profile.label).toBe("Politics");
+  });
+
+  it("matches crypto tickers via prefix", () => {
+    const profile = getCategoryProfile("", "KXBTC-100K-FEB");
+    expect(profile.label).toBe("Crypto");
+  });
+
+  it("matches weather tickers via prefix", () => {
+    const profile = getCategoryProfile("", "KXHURRICANE-CAT5-2025");
+    expect(profile.label).toBe("Weather");
+  });
+
+  it("matches world events tickers via prefix", () => {
+    const profile = getCategoryProfile("", "KXWARMING-2C-2030");
+    expect(profile.label).toBe("World Events");
+  });
 });
 
 describe("getCategoryWeight", () => {

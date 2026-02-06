@@ -16,6 +16,8 @@
 
 import type { MarketApi, Market } from "kalshi-typescript";
 import { GetMarketsStatusEnum } from "kalshi-typescript";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
+import { join } from "path";
 import {
   getCategoryProfile,
   getCategoryWeight,
@@ -124,10 +126,18 @@ export class MarketScanner {
   private config: ScannerConfig;
   private lastScanResult: ScanResult | null = null;
   private scanTimer: ReturnType<typeof setInterval> | null = null;
+  private cachePath: string;
 
   constructor(marketApi: MarketApi, config: Partial<ScannerConfig> = {}) {
     this.marketApi = marketApi;
     this.config = { ...DEFAULT_SCANNER_CONFIG, ...config };
+
+    // Set up cache file path
+    const logsDir = join(process.cwd(), "logs");
+    if (!existsSync(logsDir)) {
+      mkdirSync(logsDir, { recursive: true });
+    }
+    this.cachePath = join(logsDir, "scan-cache.json");
   }
 
   /**
@@ -176,6 +186,9 @@ export class MarketScanner {
       `${selected.length} selected from ${allMarkets.length} total ` +
       `(${rejected} rejected)`
     );
+
+    // Auto-save to cache for fast restarts
+    this.saveScanCache();
 
     return scanResult;
   }
@@ -271,6 +284,9 @@ export class MarketScanner {
       `${selected.length} selected from ${allMarkets.length} total`
     );
 
+    // Auto-save to cache for fast restarts
+    this.saveScanCache();
+
     return scanResult;
   }
 
@@ -287,6 +303,96 @@ export class MarketScanner {
   getRecommendedTickers(): string[] {
     if (!this.lastScanResult) return [];
     return this.lastScanResult.markets.map((m) => m.ticker);
+  }
+
+  // ─── Cache Management ─────────────────────────────────────────────────────
+
+  /**
+   * Save the current scan result to disk for fast restarts.
+   */
+  saveScanCache(): void {
+    if (!this.lastScanResult) return;
+    try {
+      const cacheData = {
+        ...this.lastScanResult,
+        timestamp: this.lastScanResult.timestamp.toISOString(),
+        cachedAt: new Date().toISOString(),
+      };
+      writeFileSync(this.cachePath, JSON.stringify(cacheData, null, 2));
+      console.log(`[Scanner] Cache saved: ${this.lastScanResult.markets.length} markets → ${this.cachePath}`);
+    } catch (error) {
+      console.error("[Scanner] Failed to save cache:", error);
+    }
+  }
+
+  /**
+   * Load cached scan result from disk.
+   * Returns null if cache doesn't exist or is too old.
+   *
+   * @param maxAgeMin Maximum cache age in minutes (default: rescanIntervalMin * 2)
+   */
+  loadScanCache(maxAgeMin?: number): ScanResult | null {
+    if (!existsSync(this.cachePath)) {
+      console.log("[Scanner] No cache file found");
+      return null;
+    }
+
+    try {
+      const raw = readFileSync(this.cachePath, "utf-8");
+      const data = JSON.parse(raw);
+      const cachedAt = new Date(data.cachedAt || data.timestamp);
+      const ageMin = (Date.now() - cachedAt.getTime()) / 60000;
+      const maxAge = maxAgeMin ?? this.config.rescanIntervalMin * 2;
+
+      if (ageMin > maxAge) {
+        console.log(`[Scanner] Cache is stale (${ageMin.toFixed(1)} min old, max ${maxAge} min)`);
+        return null;
+      }
+
+      // Reconstruct ScanResult with proper Date
+      const result: ScanResult = {
+        markets: data.markets,
+        totalScanned: data.totalScanned,
+        rejected: data.rejected,
+        timestamp: new Date(data.timestamp),
+        durationMs: data.durationMs,
+      };
+
+      this.lastScanResult = result;
+      console.log(
+        `[Scanner] Cache loaded: ${result.markets.length} markets, ` +
+        `${ageMin.toFixed(1)} min old`
+      );
+      return result;
+    } catch (error) {
+      console.error("[Scanner] Failed to load cache:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Smart scan: use cache if fresh, otherwise do a full scan.
+   * If cache is stale but exists, returns cached result AND kicks off
+   * a background refresh (via the returned Promise).
+   */
+  async scanWithCache(): Promise<{ result: ScanResult; fromCache: boolean; refreshing: boolean }> {
+    // Try fresh cache first (within rescan interval)
+    const freshCache = this.loadScanCache(this.config.rescanIntervalMin);
+    if (freshCache) {
+      return { result: freshCache, fromCache: true, refreshing: false };
+    }
+
+    // Try stale cache (up to 24 hours old) for immediate start
+    const staleCache = this.loadScanCache(1440);
+    if (staleCache) {
+      console.log("[Scanner] Using stale cache for immediate start, will refresh in background");
+      return { result: staleCache, fromCache: true, refreshing: true };
+    }
+
+    // No usable cache -- full scan required
+    const result = await this.scan();
+    this.saveScanCache();
+    return { result, fromCache: false, refreshing: false };
   }
 
   /**
@@ -337,6 +443,9 @@ export class MarketScanner {
     const allMarkets: Market[] = [];
     let cursor: string | undefined;
     const limit = 1000; // Max page size
+    const MAX_PAGES = 200; // Safety: cap at 200k markets to avoid infinite loops
+    let page = 0;
+    const seenCursors = new Set<string>();
 
     do {
       try {
@@ -358,10 +467,27 @@ export class MarketScanner {
         const markets = response.data?.markets ?? [];
         allMarkets.push(...markets);
         cursor = response.data?.cursor || undefined;
+        page++;
 
-        // Respect rate limit
+        // Log progress every 10 pages
+        if (page % 10 === 0) {
+          console.log(`[Scanner] ... fetched ${allMarkets.length} markets (page ${page})`);
+        }
+
+        // Detect cursor loops
         if (cursor) {
+          if (seenCursors.has(cursor)) {
+            console.warn(`[Scanner] Cursor loop detected at page ${page}, stopping pagination`);
+            break;
+          }
+          seenCursors.add(cursor);
           await this.sleep(250);
+        }
+
+        // Safety cap
+        if (page >= MAX_PAGES) {
+          console.warn(`[Scanner] Reached max page limit (${MAX_PAGES}), stopping`);
+          break;
         }
       } catch (error) {
         console.error("[Scanner] Error fetching markets:", error);
@@ -418,10 +544,11 @@ export class MarketScanner {
     const spread = ask - bid;
     const mid = (bid + ask) / 2;
 
-    // Use liquidity as a proxy for depth (not perfect but avoids extra API calls)
-    const liquidity = market.liquidity ?? 0;
+    // Use liquidity as a proxy for depth (not perfect but avoids extra API calls).
+    // Liquidity is in cents. Clamp to non-negative to avoid Infinity scores.
+    const liquidity = Math.max(0, market.liquidity ?? 0);
     // Rough estimate: liquidity in cents / average price = approximate contracts
-    const estimatedDepth = mid > 0 ? liquidity / mid : 0;
+    const estimatedDepth = mid > 0 ? Math.max(0, liquidity / mid) : 0;
 
     // Check if it's a longshot market
     const isLongshot = mid <= 15 || mid >= 85;

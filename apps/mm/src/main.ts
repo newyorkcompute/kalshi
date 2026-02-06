@@ -11,6 +11,8 @@
  *   npm start -- --scan            # One-shot market scan (no trading)
  *   npm start -- --scan --deep     # Deep scan with orderbook depth
  *   npm start -- --init            # Generate config template
+ *   npm run dashboard              # Launch terminal dashboard (monitors running bot)
+ *   npm start -- --dashboard       # Same as above
  */
 
 import { Bot } from "./daemon/bot.js";
@@ -19,7 +21,24 @@ import { startControlPlane } from "./api/server.js";
 import { MarketScanner, formatScanResults, type ScannerConfig } from "./scanner/index.js";
 import { createMarketApi } from "@newyorkcompute/kalshi-core";
 
+function patchConsoleTimestamps(): void {
+  const origLog = console.log.bind(console);
+  const origWarn = console.warn.bind(console);
+  const origError = console.error.bind(console);
+
+  const ts = (): string => {
+    const d = new Date();
+    return `[${d.toLocaleTimeString("en-US", { hour12: false })}]`;
+  };
+
+  console.log = (...args: unknown[]) => origLog(ts(), ...args);
+  console.warn = (...args: unknown[]) => origWarn(ts(), ...args);
+  console.error = (...args: unknown[]) => origError(ts(), ...args);
+}
+
 async function main(): Promise<void> {
+  patchConsoleTimestamps();
+
   console.log("╔═══════════════════════════════════════╗");
   console.log("║     Kalshi Market Maker Daemon        ║");
   console.log("╚═══════════════════════════════════════╝");
@@ -31,6 +50,24 @@ async function main(): Promise<void> {
     console.log(getConfigTemplate());
     console.log("\nCopy the above to config.yaml and customize.");
     process.exit(0);
+  }
+
+  // Check for --dashboard flag (launch TUI monitor)
+  if (process.argv.includes("--dashboard")) {
+    const { render } = await import("ink");
+    const React = await import("react");
+    const { Dashboard } = await import("./dashboard/Dashboard.js");
+    const portArg = process.argv.find((a) => a.startsWith("--port"));
+    const portIdx = process.argv.indexOf("--port");
+    const port =
+      portArg && portArg.includes("=")
+        ? parseInt(portArg.split("=")[1], 10)
+        : portIdx >= 0 && process.argv[portIdx + 1]
+          ? parseInt(process.argv[portIdx + 1], 10)
+          : 3001;
+    console.clear();
+    render(React.createElement(Dashboard, { port }));
+    return;
   }
 
   // Check for --scan flag (one-shot market scan, no trading)

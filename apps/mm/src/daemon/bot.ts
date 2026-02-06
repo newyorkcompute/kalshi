@@ -22,20 +22,9 @@ import type { MarketApi, PortfolioApi, Market } from "kalshi-typescript";
 import { appendFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 
-/** Format timestamp for logs: HH:MM:SS */
-function ts(): string {
-  const now = new Date();
-  return now.toLocaleTimeString('en-US', { 
-    hour12: false, 
-    hour: '2-digit', 
-    minute: '2-digit', 
-    second: '2-digit' 
-  });
-}
-
-/** Log with timestamp prefix */
+/** Log with tag prefix (timestamp is auto-prepended by patched console) */
 function log(tag: string, message: string): void {
-  console.log(`[${ts()}] [${tag}] ${message}`);
+  console.log(`[${tag}] ${message}`);
 }
 
 /** Cached market metadata (including expiry times) */
@@ -163,8 +152,14 @@ export class Bot {
 
   // Logging
   private logFile: string;
+  private fillsLogFile: string;  // JSONL structured fill log
+  private sessionId: string;     // Unique session identifier
+  private sessionStartTime: number = 0;
   private lastSummaryTime: number = 0;
   private readonly SUMMARY_INTERVAL_MS = 60000; // Log summary every minute
+
+  // Rate-limit rejection log messages (key = reason, value = last log timestamp)
+  private _rejectionLogTimes: Map<string, number> = new Map();
 
   // Market metadata cache (for expiry times)
   private marketMetadata: Map<string, MarketMetadata> = new Map();
@@ -175,13 +170,18 @@ export class Bot {
   private readonly STALE_CHECK_INTERVAL_MS = 10_000; // Check every 10 seconds
 
   constructor(config: Config) {
-    // Set up log file
+    // Generate unique session ID
+    this.sessionId = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    this.sessionStartTime = Date.now();
+
+    // Set up log files
     const logsDir = join(process.cwd(), "logs");
     if (!existsSync(logsDir)) {
       mkdirSync(logsDir, { recursive: true });
     }
     const date = new Date().toISOString().split("T")[0];
     this.logFile = join(logsDir, `mm-${date}.log`);
+    this.fillsLogFile = join(logsDir, `fills-${date}.jsonl`);
 
     this.config = config;
     this.credentials = getKalshiCredentials();
@@ -211,13 +211,32 @@ export class Bot {
     log("Bot", `Scanner: ${this.scannerEnabled ? "ENABLED" : "disabled"}`);
     log("Bot", `Static markets: ${config.markets.length > 0 ? config.markets.join(", ") : "(none - scanner will provide)"}`);
     log("Bot", `Log file: ${this.logFile}`);
+    log("Bot", `Fills log: ${this.fillsLogFile}`);
+    log("Bot", `Session: ${this.sessionId}`);
 
-    // Log startup
-    this.logToFile(`=== BOT STARTED ===`);
+    // ─── Structured session start ───
+    this.logToFile(`\n${"=".repeat(60)}`);
+    this.logToFile(`=== SESSION START: ${this.sessionId} ===`);
+    this.logToFile(`${"=".repeat(60)}`);
     this.logToFile(`Strategy: ${this.strategy.name}`);
     this.logToFile(`Mode: ${config.kalshi.demo ? "DEMO" : "PRODUCTION"}`);
     this.logToFile(`Scanner: ${this.scannerEnabled ? "ENABLED" : "disabled"}`);
-    this.logToFile(`Markets: ${config.markets.join(", ")}`);
+    this.logToFile(`Static markets: ${config.markets.length > 0 ? config.markets.join(", ") : "(none)"}`);
+    this.logToFile(`Risk limits: maxPos=${config.risk.maxPositionPerMarket} maxExposure=${config.risk.maxTotalExposure} maxDailyLoss=${config.risk.maxDailyLoss}¢ maxOrder=${config.risk.maxOrderSize}`);
+    this.logToFile(`Config snapshot: ${JSON.stringify({ strategy: config.strategy.name, scanner: config.scanner, risk: config.risk })}`);
+
+    // Write session start to JSONL fills log
+    this.logFillJsonl({
+      type: "session_start",
+      sessionId: this.sessionId,
+      timestamp: new Date().toISOString(),
+      config: {
+        strategy: config.strategy.name,
+        mode: config.kalshi.demo ? "demo" : "production",
+        scanner: config.scanner,
+        risk: config.risk,
+      },
+    });
   }
 
   /**
@@ -248,12 +267,9 @@ export class Bot {
       // === SCANNER: Initial scan if enabled ===
       if (this.scannerEnabled) {
         this.scanner = new MarketScanner(this.marketApi!, this.config.scanner as Partial<ScannerConfig>);
-        log("Bot", "Running initial market scan...");
+        log("Bot", "Running initial market scan (checking cache first)...");
         try {
-          const scanConfig = this.config.scanner;
-          const result = scanConfig.deepScan
-            ? await this.scanner.deepScan()
-            : await this.scanner.scan();
+          const { result, fromCache, refreshing } = await this.scanner.scanWithCache();
           this.lastScanResult = result;
           const scannedTickers = this.scanner.getRecommendedTickers();
           
@@ -262,9 +278,25 @@ export class Bot {
             this.activeMarkets.add(ticker);
           }
           
+          const cacheTag = fromCache ? " (from cache)" : "";
           console.log(formatScanResults(result));
-          log("Bot", `Scanner added ${scannedTickers.length} markets (total active: ${this.activeMarkets.size})`);
-          this.logToFile(`Scanner: ${scannedTickers.length} markets found`);
+          log("Bot", `Scanner added ${scannedTickers.length} markets${cacheTag} (total active: ${this.activeMarkets.size})`);
+          this.logToFile(`Scanner: ${scannedTickers.length} markets found${cacheTag}`);
+
+          // If cache was stale, schedule a background refresh
+          if (refreshing) {
+            log("Bot", "Background scan refresh starting...");
+            const scanConfig = this.config.scanner;
+            const freshScanPromise = scanConfig.deepScan
+              ? this.scanner.deepScan()
+              : this.scanner.scan();
+            freshScanPromise.then(async (freshResult) => {
+              log("Bot", `Background refresh complete: ${freshResult.markets.length} markets`);
+              await this.onScanComplete(freshResult);
+            }).catch((err) => {
+              console.error("[Bot] Background refresh failed:", err);
+            });
+          }
         } catch (error) {
           console.error("[Bot] Scanner failed, continuing with static markets:", error);
           this.logToFile(`Scanner failed: ${error}`);
@@ -374,6 +406,33 @@ export class Bot {
     if (this.ws) {
       this.ws.disconnect();
     }
+
+    // ─── Structured session end ───
+    const pnl = this.inventory.getPnLSummary();
+    const durationMs = Date.now() - this.sessionStartTime;
+    const durationMin = (durationMs / 60000).toFixed(1);
+
+    this.logToFile(`\n${"─".repeat(60)}`);
+    this.logToFile(`=== SESSION END: ${this.sessionId} ===`);
+    this.logToFile(`Duration: ${durationMin} minutes`);
+    this.logToFile(`Fills: ${pnl.fillsToday} | Volume: ${pnl.volumeToday} contracts`);
+    this.logToFile(`Realized P&L: ${pnl.realizedToday}¢ ($${(pnl.realizedToday / 100).toFixed(2)})`);
+    this.logToFile(`Markets traded: ${[...this.activeMarkets].join(", ")}`);
+    this.logToFile(`${"─".repeat(60)}\n`);
+
+    // Write session end to JSONL fills log
+    this.logFillJsonl({
+      type: "session_end",
+      sessionId: this.sessionId,
+      timestamp: new Date().toISOString(),
+      durationMin: parseFloat(durationMin),
+      pnl: {
+        realized: pnl.realizedToday,
+        fills: pnl.fillsToday,
+        volume: pnl.volumeToday,
+      },
+      markets: [...this.activeMarkets],
+    });
 
     console.log("[Bot] Stopped");
   }
@@ -901,7 +960,7 @@ export class Bot {
     const posDir = netPos > 0 ? "LONG" : netPos < 0 ? "SHORT" : "FLAT";
 
     console.log(
-      `\n[${ts()}] ${emoji} FILL: ${data.action.toUpperCase()} ${data.count}x ${data.side.toUpperCase()} @ ${price}¢`
+      `\n${emoji} FILL: ${data.action.toUpperCase()} ${data.count}x ${data.side.toUpperCase()} @ ${price}¢`
     );
     console.log(`         Market: ${ticker}`);
     console.log(`         Cost: ${cost}¢ ($${(cost / 100).toFixed(2)})`);
@@ -961,6 +1020,15 @@ export class Bot {
     const data = this.marketData.get(ticker);
     if (!data) return;
 
+    // ─── EARLY EXIT: Skip quoting when at or over max exposure ───
+    // This prevents computing quotes, sending them to risk, and logging
+    // rejection messages hundreds of times per minute while maxed out.
+    const totalExposure = this.inventory.getTotalExposure();
+    const maxExposure = this.config.risk.maxTotalExposure;
+    if (totalExposure >= maxExposure) {
+      return; // Silently skip -- nothing we can do until exposure frees up
+    }
+
     // Get enhanced orderbook data
     const ob = this.orderbookManager.getOrderbook(ticker);
     const bbo = ob.getBBO();
@@ -1006,13 +1074,14 @@ export class Bot {
     const positionMultiplier = this.drawdownManager.getPositionMultiplier();
 
     // Place quotes (risk check happens inside updateQuote)
+    const maxOrderSize = this.config.risk.maxOrderSize;
     for (const quote of quotes) {
-      // Apply drawdown scaling to sizes
+      // Apply drawdown scaling to sizes, then clamp to maxOrderSize
       // IMPORTANT: Preserve 0 sizes from strategy (skip risky side protection)
       const scaledQuote = {
         ...quote,
-        bidSize: quote.bidSize === 0 ? 0 : Math.max(1, Math.floor(quote.bidSize * positionMultiplier)),
-        askSize: quote.askSize === 0 ? 0 : Math.max(1, Math.floor(quote.askSize * positionMultiplier)),
+        bidSize: quote.bidSize === 0 ? 0 : Math.min(maxOrderSize, Math.max(1, Math.floor(quote.bidSize * positionMultiplier))),
+        askSize: quote.askSize === 0 ? 0 : Math.min(maxOrderSize, Math.max(1, Math.floor(quote.askSize * positionMultiplier))),
       };
       
       // If multiplier is 0, skip quoting entirely
@@ -1033,8 +1102,35 @@ export class Bot {
 
       const check = this.risk.checkQuote(scaledQuote, this.inventory);
       if (!check.allowed) {
-        console.log(`[Bot] ⚠️ Quote rejected: ${check.reason}`);
+        // Rate-limit rejection logs: at most once per 30 seconds per reason
+        const now = Date.now();
+        const reasonKey = check.reason ?? "unknown";
+        const lastLog = this._rejectionLogTimes.get(reasonKey) ?? 0;
+        if (now - lastLog >= 30_000) {
+          console.log(`[Bot] ⚠️ Quote rejected: ${reasonKey}`);
+          this._rejectionLogTimes.set(reasonKey, now);
+        }
         continue;
+      }
+
+      // ─── MAKER PROTECTION: Final spread-crossing guard ───
+      // Re-fetch the freshest BBO right before placing to prevent crossing
+      // when local orderbook data lags the real market.
+      const freshBBO = this.orderbookManager.getBBO(scaledQuote.ticker);
+      if (freshBBO) {
+        if (scaledQuote.bidSize > 0 && scaledQuote.bidPrice >= freshBBO.askPrice) {
+          scaledQuote.bidPrice = Math.max(1, Math.min(99, freshBBO.askPrice - 1));
+          if (scaledQuote.bidPrice <= 0) scaledQuote.bidSize = 0;
+        }
+        if (scaledQuote.askSize > 0 && scaledQuote.askPrice <= freshBBO.bidPrice) {
+          scaledQuote.askPrice = Math.max(1, Math.min(99, freshBBO.bidPrice + 1));
+          if (scaledQuote.askPrice > 99) scaledQuote.askSize = 0;
+        }
+        if (scaledQuote.bidSize > 0 && scaledQuote.askSize > 0 && scaledQuote.bidPrice >= scaledQuote.askPrice) {
+          // Spread collapsed - skip this quote cycle
+          continue;
+        }
+        if (scaledQuote.bidSize === 0 && scaledQuote.askSize === 0) continue;
       }
 
       try {
@@ -1230,7 +1326,7 @@ export class Bot {
     
     // Warn on slow updates (with batch APIs, should be ~100-150ms)
     if (ms > 200) {
-      console.warn(`[${ts()}] [Bot] ⚠️ Slow quote update: ${ms}ms`);
+      console.warn(`[Bot] ⚠️ Slow quote update: ${ms}ms`);
     }
   }
 
@@ -1267,13 +1363,40 @@ export class Bot {
   }
 
   /**
-   * Log a fill to file
+   * Log a fill to file (plain text + JSONL structured)
    */
   private logFillToFile(data: FillData, realizedPnL: number, sessionPnL: number): void {
     const ticker = data.market_ticker || data.ticker || "";
     const price = data.side === "yes" ? data.yes_price : data.no_price;
     const msg = `FILL: ${data.action} ${data.count}x ${data.side} ${ticker} @ ${price}¢ | Realized: ${realizedPnL}¢ | Session P&L: ${sessionPnL}¢`;
     this.logToFile(msg);
+
+    // Structured JSONL for post-analysis
+    this.logFillJsonl({
+      type: "fill",
+      sessionId: this.sessionId,
+      timestamp: new Date().toISOString(),
+      ticker,
+      action: data.action,
+      side: data.side,
+      count: data.count,
+      price,
+      isTaker: data.is_taker ?? false,
+      realizedPnL,
+      sessionPnL,
+      orderId: data.order_id,
+    });
+  }
+
+  /**
+   * Append a structured JSON line to the fills JSONL log
+   */
+  private logFillJsonl(record: Record<string, unknown>): void {
+    try {
+      appendFileSync(this.fillsLogFile, JSON.stringify(record) + "\n");
+    } catch {
+      // Ignore file write errors
+    }
   }
 
   /**
@@ -1289,7 +1412,7 @@ export class Bot {
 
     if (pnl.fillsToday === 0 && positions.length === 0) return;
 
-    console.log(`\n[${ts()}] 📈 ─── SESSION SUMMARY ────────────────────────`);
+    console.log(`\n📈 ─── SESSION SUMMARY ────────────────────────`);
     console.log(`         Fills: ${pnl.fillsToday} | Volume: ${pnl.volumeToday} contracts`);
     console.log(`         Realized P&L: ${pnl.realizedToday > 0 ? "+" : ""}${pnl.realizedToday}¢ ($${(pnl.realizedToday / 100).toFixed(2)})`);
 
@@ -1306,6 +1429,21 @@ export class Bot {
 
     // Log to file
     this.logToFile(`SUMMARY: Fills=${pnl.fillsToday} Vol=${pnl.volumeToday} P&L=${pnl.realizedToday}¢`);
+
+    // Structured JSONL checkpoint
+    this.logFillJsonl({
+      type: "pnl_checkpoint",
+      sessionId: this.sessionId,
+      timestamp: new Date().toISOString(),
+      fills: pnl.fillsToday,
+      volume: pnl.volumeToday,
+      realizedPnL: pnl.realizedToday,
+      activeMarkets: [...this.activeMarkets],
+      positions: positions.filter(p => p.netExposure !== 0).map(p => ({
+        ticker: p.ticker,
+        exposure: p.netExposure,
+      })),
+    });
   }
 }
 

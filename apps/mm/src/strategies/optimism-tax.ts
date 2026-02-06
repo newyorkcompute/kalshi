@@ -131,13 +131,46 @@ export class OptimismTaxStrategy extends BaseStrategy {
     }
 
     // Determine which zone we're in
+    let quotes: Quote[];
     if (mid <= this.params.longShotThreshold) {
-      return this.computeLongshotQuotes(snapshot, mid, expiryMultiplier);
+      quotes = this.computeLongshotQuotes(snapshot, mid, expiryMultiplier);
     } else if (mid >= this.params.nearlyCertainThreshold) {
-      return this.computeNearlyCertainQuotes(snapshot, mid, expiryMultiplier);
+      quotes = this.computeNearlyCertainQuotes(snapshot, mid, expiryMultiplier);
     } else {
-      return this.computeMidRangeQuotes(snapshot, mid, expiryMultiplier);
+      quotes = this.computeMidRangeQuotes(snapshot, mid, expiryMultiplier);
     }
+
+    // ─── CRITICAL: Prevent spread-crossing (maker protection) ───
+    // Ensure our bid never reaches the best ask and our ask never reaches
+    // the best bid.  Without this guard the "edge" arithmetic can push
+    // limit orders past the opposite side of the book, causing them to
+    // execute immediately as **taker** fills rather than resting as maker.
+    for (const q of quotes) {
+      if (q.bidSize > 0 && q.bidPrice >= bestAsk) {
+        q.bidPrice = this.clampPrice(bestAsk - 1);
+      }
+      if (q.askSize > 0 && q.askPrice <= bestBid) {
+        q.askPrice = this.clampPrice(bestBid + 1);
+      }
+      // If after clamping the spread collapses, zero out the offending side
+      if (q.bidPrice >= q.askPrice) {
+        // Keep whichever side the zone logic considers more important:
+        // in near-certainty we want the bid, in longshot the ask, in mid both.
+        if (mid >= this.params.nearlyCertainThreshold) {
+          q.askSize = 0;
+          q.askPrice = 0;
+        } else if (mid <= this.params.longShotThreshold) {
+          q.bidSize = 0;
+          q.bidPrice = 0;
+        } else {
+          // mid-range: skip entirely
+          q.bidSize = 0;
+          q.askSize = 0;
+        }
+      }
+    }
+
+    return quotes.filter(q => q.bidSize > 0 || q.askSize > 0);
   }
 
   /**

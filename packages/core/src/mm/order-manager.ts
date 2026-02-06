@@ -111,7 +111,7 @@ export class OrderManager {
     this.orders.set(clientOrderId, managedOrder);
 
     try {
-      // Place via Kalshi API
+      // Place via Kalshi API (post_only ensures we rest as maker, never cross)
       const response = await this.ordersApi.createOrder({
         ticker: input.ticker,
         type: "limit",
@@ -121,6 +121,7 @@ export class OrderManager {
         no_price: input.side === "no" ? input.price : undefined,
         count: input.count,
         client_order_id: clientOrderId,
+        post_only: true,
       });
 
       // Update with Kalshi order ID
@@ -182,6 +183,7 @@ export class OrderManager {
           no_price: input.side === "no" ? input.price : undefined,
           count: input.count,
           client_order_id: clientOrderId,
+          post_only: true,
         })),
       });
 
