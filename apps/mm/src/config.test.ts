@@ -75,14 +75,15 @@ risk:
       );
     });
 
-    it("should throw on missing markets", () => {
+    it("should default to empty markets when not provided", () => {
       const yaml = `
 api:
   port: 3001
       `;
       writeFileSync(testConfigPath, yaml);
 
-      expect(() => loadConfig(testConfigPath)).toThrow("Invalid configuration");
+      const config = loadConfig(testConfigPath);
+      expect(config.markets).toEqual([]);
     });
 
     it("should throw on invalid port", () => {

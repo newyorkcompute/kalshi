@@ -64,11 +64,34 @@ const AvellanedaStrategySchema = z.object({
   useMarketExpiry: z.boolean().default(true),
 });
 
+const OptimismTaxStrategySchema = z.object({
+  // Optimism Tax zones
+  longShotThreshold: z.number().min(1).max(30).default(15),
+  nearlyCertainThreshold: z.number().min(70).max(99).default(85),
+  optimismEdgeCents: z.number().min(0).max(10).default(2),
+  optimismSizeMultiplier: z.number().min(0.5).max(5).default(1.5),
+  maxLongshotExposure: z.number().min(1).max(500).default(50),
+  // Standard MM params (mid-range)
+  edgeCents: z.number().min(0).max(10).default(1),
+  minSpreadCents: z.number().min(1).max(20).default(2),
+  sizePerSide: z.number().min(1).max(100).default(5),
+  maxMarketSpread: z.number().min(5).max(50).default(20),
+  skewFactor: z.number().min(0).max(5).default(0.5),
+  maxInventorySkew: z.number().min(1).max(100).default(30),
+  useMicroprice: z.boolean().default(true),
+  adverseSelectionMultiplier: z.number().min(1).max(10).default(2.5),
+  // Time-decay
+  expiryWidenStartSec: z.number().min(60).max(86400).default(3600),
+  expiryStopQuoteSec: z.number().min(0).max(3600).default(300),
+  expirySpreadMultiplier: z.number().min(1).max(5).default(2.0),
+});
+
 const StrategyConfigSchema = z.object({
-  name: z.enum(["symmetric", "adaptive", "avellaneda"]).default("symmetric"),
+  name: z.enum(["symmetric", "adaptive", "avellaneda", "optimism-tax"]).default("symmetric"),
   symmetric: SymmetricStrategySchema.default({}),
   adaptive: AdaptiveStrategySchema.default({}),
   avellaneda: AvellanedaStrategySchema.default({}),
+  "optimism-tax": OptimismTaxStrategySchema.default({}),
 });
 
 const RiskConfigSchema = z.object({
@@ -90,11 +113,27 @@ const DaemonConfigSchema = z.object({
   reconnectDelayMs: z.number().min(100).default(5000),
 });
 
+const ScannerConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  maxMarkets: z.number().min(1).max(200).default(50),
+  rescanIntervalMin: z.number().min(5).max(1440).default(30),
+  maxDepth: z.number().min(100).max(100000).default(2000),
+  minVolume: z.number().min(0).max(10000).default(50),
+  maxWhaleOrder: z.number().min(100).max(100000).default(2000),
+  minSpread: z.number().min(1).max(50).default(2),
+  maxSpread: z.number().min(2).max(50).default(25),
+  preferredCategories: z.array(z.string()).default([]),
+  minHoursToExpiry: z.number().min(0).max(720).default(1),
+  /** Use deep scan (fetches orderbook per market, slower but more accurate) */
+  deepScan: z.boolean().default(false),
+});
+
 const ConfigSchema = z.object({
   api: ApiConfigSchema.default({}),
   kalshi: KalshiConfigSchema.default({}),
   strategy: StrategyConfigSchema.default({}),
-  markets: z.array(z.string()).min(1),
+  markets: z.array(z.string()).default([]),
+  scanner: ScannerConfigSchema.default({}),
   risk: RiskConfigSchema.default({}),
   daemon: DaemonConfigSchema.default({}),
 });

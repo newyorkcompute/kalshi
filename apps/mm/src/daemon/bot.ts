@@ -80,6 +80,7 @@ import { getKalshiCredentials, getBasePath } from "../config.js";
 import { createStrategy, type Strategy, type MarketSnapshot } from "../strategies/index.js";
 import { AdverseSelectionDetector, type FillRecord } from "../adverse-selection.js";
 import { DrawdownManager, CircuitBreaker } from "../risk-controls.js";
+import { MarketScanner, formatScanResults, type ScanResult, type ScannerConfig } from "../scanner/index.js";
 
 export interface BotState {
   running: boolean;
@@ -92,6 +93,11 @@ export interface BotState {
   risk: ReturnType<RiskManager["getStatus"]>;
   drawdown: ReturnType<DrawdownManager["getStatus"]>;
   circuitBreaker: ReturnType<CircuitBreaker["getStatus"]>;
+  scanner?: {
+    enabled: boolean;
+    lastScan: Date | null;
+    marketsFound: number;
+  };
 }
 
 /**
@@ -122,6 +128,17 @@ export class Bot {
   // Advanced risk controls
   private drawdownManager: DrawdownManager;
   private circuitBreaker: CircuitBreaker;
+
+  // Scanner for dynamic market selection
+  private scanner: MarketScanner | null = null;
+  private scannerEnabled: boolean = false;
+  private lastScanResult: ScanResult | null = null;
+
+  // Dynamic market list (scanner can modify this)
+  private activeMarkets: Set<string> = new Set();
+
+  // Per-market P&L tracking (for dropping underperformers)
+  private marketPnL: Map<string, { realized: number; fills: number; addedAt: number }> = new Map();
 
   // Market state (legacy - kept for ticker fallback)
   private marketData: Map<string, { bestBid: number; bestAsk: number }> =
@@ -181,15 +198,25 @@ export class Bot {
     this.drawdownManager = new DrawdownManager();
     this.circuitBreaker = new CircuitBreaker();
 
+    // Initialize active markets from config
+    for (const m of config.markets) {
+      this.activeMarkets.add(m);
+    }
+
+    // Check if scanner is enabled
+    this.scannerEnabled = config.scanner?.enabled ?? false;
+
     log("Bot", `Strategy: ${this.strategy.name}`);
     log("Bot", `Mode: ${config.kalshi.demo ? "DEMO" : "PRODUCTION"}`);
-    log("Bot", `Markets: ${config.markets.join(", ")}`);
+    log("Bot", `Scanner: ${this.scannerEnabled ? "ENABLED" : "disabled"}`);
+    log("Bot", `Static markets: ${config.markets.length > 0 ? config.markets.join(", ") : "(none - scanner will provide)"}`);
     log("Bot", `Log file: ${this.logFile}`);
 
     // Log startup
     this.logToFile(`=== BOT STARTED ===`);
     this.logToFile(`Strategy: ${this.strategy.name}`);
     this.logToFile(`Mode: ${config.kalshi.demo ? "DEMO" : "PRODUCTION"}`);
+    this.logToFile(`Scanner: ${this.scannerEnabled ? "ENABLED" : "disabled"}`);
     this.logToFile(`Markets: ${config.markets.join(", ")}`);
   }
 
@@ -217,6 +244,39 @@ export class Bot {
       this.marketApi = createMarketApi(apiConfig);
       this.portfolioApi = createPortfolioApi(apiConfig);
       this.orderManager = new OrderManager(this.ordersApi);
+
+      // === SCANNER: Initial scan if enabled ===
+      if (this.scannerEnabled) {
+        this.scanner = new MarketScanner(this.marketApi!, this.config.scanner as Partial<ScannerConfig>);
+        log("Bot", "Running initial market scan...");
+        try {
+          const scanConfig = this.config.scanner;
+          const result = scanConfig.deepScan
+            ? await this.scanner.deepScan()
+            : await this.scanner.scan();
+          this.lastScanResult = result;
+          const scannedTickers = this.scanner.getRecommendedTickers();
+          
+          // Add scanned markets to active set (alongside any static ones)
+          for (const ticker of scannedTickers) {
+            this.activeMarkets.add(ticker);
+          }
+          
+          console.log(formatScanResults(result));
+          log("Bot", `Scanner added ${scannedTickers.length} markets (total active: ${this.activeMarkets.size})`);
+          this.logToFile(`Scanner: ${scannedTickers.length} markets found`);
+        } catch (error) {
+          console.error("[Bot] Scanner failed, continuing with static markets:", error);
+          this.logToFile(`Scanner failed: ${error}`);
+        }
+      }
+
+      // Validate we have markets to trade
+      if (this.activeMarkets.size === 0) {
+        throw new Error(
+          "No markets to trade! Either add markets to config.yaml or enable the scanner."
+        );
+      }
 
       // === P0: ORDER RECONCILIATION ON STARTUP ===
       // Cancel any orphan orders from previous sessions for our markets
@@ -250,6 +310,13 @@ export class Bot {
       await this.ws.connect();
 
       console.log("[Bot] Started successfully");
+
+      // Start periodic scanner if enabled
+      if (this.scannerEnabled && this.scanner) {
+        this.scanner.startPeriodicScan(async (result) => {
+          await this.onScanComplete(result);
+        });
+      }
 
       // Keep alive (the bot runs via WebSocket events)
       while (this.running) {
@@ -291,6 +358,11 @@ export class Bot {
 
     console.log("[Bot] Stopping...");
     this.running = false;
+
+    // Stop scanner
+    if (this.scanner) {
+      this.scanner.stopPeriodicScan();
+    }
 
     // Cancel all orders
     if (this.orderManager) {
@@ -345,14 +417,108 @@ export class Bot {
       running: this.running,
       paused: this.paused,
       connected: this.ws?.isConnected ?? false,
-      markets: this.config.markets,
+      markets: this.getActiveMarkets(),
       activeOrders: this.orderManager?.getActive().length ?? 0,
       positions: this.inventory.getAllPositions(),
       pnl: this.inventory.getPnLSummary(),
       risk: this.risk.getStatus(this.inventory),
       drawdown: this.drawdownManager.getStatus(),
       circuitBreaker: this.circuitBreaker.getStatus(),
+      scanner: this.scannerEnabled ? {
+        enabled: true,
+        lastScan: this.lastScanResult?.timestamp ?? null,
+        marketsFound: this.lastScanResult?.markets.length ?? 0,
+      } : undefined,
     };
+  }
+
+  /**
+   * Get the active market list (static config + scanner results).
+   */
+  getActiveMarkets(): string[] {
+    return Array.from(this.activeMarkets);
+  }
+
+  /**
+   * Add a market dynamically.
+   */
+  async addMarket(ticker: string): Promise<void> {
+    if (this.activeMarkets.has(ticker)) {
+      log("Bot", `Market ${ticker} already active`);
+      return;
+    }
+
+    this.activeMarkets.add(ticker);
+    this.marketPnL.set(ticker, { realized: 0, fills: 0, addedAt: Date.now() });
+
+    // Subscribe to WebSocket channels
+    if (this.ws?.isConnected) {
+      this.ws.subscribe(["ticker", "orderbook_delta"], [ticker]);
+    }
+
+    // Fetch metadata
+    if (this.marketApi) {
+      try {
+        const response = await this.marketApi.getMarket(ticker);
+        const market = response.data?.market;
+        if (market) this.cacheMarketMetadata(market);
+      } catch {
+        // Non-critical, continue
+      }
+    }
+
+    log("Bot", `Added market: ${ticker} (total: ${this.activeMarkets.size})`);
+    this.logToFile(`Market added: ${ticker}`);
+  }
+
+  /**
+   * Remove a market dynamically.
+   * Cancels any outstanding orders for that market.
+   */
+  async removeMarket(ticker: string): Promise<void> {
+    if (!this.activeMarkets.has(ticker)) return;
+
+    // Cancel orders for this market
+    if (this.orderManager) {
+      try {
+        await this.orderManager.cancelAllAndClear([ticker]);
+      } catch {
+        // Best effort
+      }
+    }
+
+    this.activeMarkets.delete(ticker);
+    this.lastSentQuote.delete(ticker);
+    this.lastQuoteUpdate.delete(ticker);
+    this.lastBBO.delete(ticker);
+    this.marketData.delete(ticker);
+
+    // Note: we don't unsubscribe from WS channels since it's harmless
+    // and the next reconnect will clean up
+
+    log("Bot", `Removed market: ${ticker} (total: ${this.activeMarkets.size})`);
+    this.logToFile(`Market removed: ${ticker}`);
+  }
+
+  /**
+   * Get the scanner instance (for API endpoints).
+   */
+  getScanner(): MarketScanner | null {
+    return this.scanner;
+  }
+
+  /**
+   * Get per-market P&L data.
+   */
+  getMarketPnL(): Map<string, { realized: number; fills: number; addedAt: number }> {
+    return new Map(this.marketPnL);
+  }
+
+  /**
+   * Get last scan result.
+   */
+  getLastScanResult(): ScanResult | null {
+    return this.lastScanResult;
   }
 
   /**
@@ -398,9 +564,10 @@ export class Bot {
 
     // Subscribe to ticker + orderbook_delta for our markets, plus fill channel
     if (this.ws) {
-      this.ws.subscribe(["ticker", "orderbook_delta"], this.config.markets);
+      const marketList = this.getActiveMarkets();
+      this.ws.subscribe(["ticker", "orderbook_delta"], marketList);
       this.ws.subscribe(["fill"]); // Authenticated channel for our fills
-      log("Bot", `Subscribed to: ${this.config.markets.join(", ")}`);
+      log("Bot", `Subscribed to ${marketList.length} markets`);
       console.log("[Bot] Waiting for market data...");
     }
   }
@@ -421,7 +588,7 @@ export class Bot {
 
     try {
       // Cancel all resting orders for our configured markets
-      const cancelled = await this.orderManager.cancelAllAndClear(this.config.markets);
+      const cancelled = await this.orderManager.cancelAllAndClear(this.getActiveMarkets());
 
       if (cancelled > 0) {
         log("Bot", `✅ Cancelled ${cancelled} orphan orders from previous sessions`);
@@ -445,7 +612,7 @@ export class Bot {
 
     console.log("[Bot] 📊 Fetching market metadata...");
 
-    for (const ticker of this.config.markets) {
+    for (const ticker of this.getActiveMarkets()) {
       try {
         const response = await this.marketApi.getMarket(ticker);
         const market = response.data?.market;
@@ -526,7 +693,7 @@ export class Bot {
 
       // Filter to only our configured markets
       const relevantPositions = positions.filter(p =>
-        this.config.markets.includes(p.ticker)
+        this.activeMarkets.has(p.ticker)
       );
 
       // Initialize inventory with existing positions
@@ -551,7 +718,7 @@ export class Bot {
 
       // Also log any positions in OTHER markets (warning)
       const otherPositions = positions.filter(p =>
-        !this.config.markets.includes(p.ticker) && p.position !== 0
+        !this.activeMarkets.has(p.ticker) && p.position !== 0
       );
       if (otherPositions.length > 0) {
         log("Bot", `⚠️ You have ${otherPositions.length} positions in OTHER markets (not managed by this bot)`);
@@ -570,7 +737,7 @@ export class Bot {
 
   private async onOrderbookSnapshot(data: OrderbookSnapshot): Promise<void> {
     const ticker = data.market_ticker;
-    if (!ticker || !this.config.markets.includes(ticker)) return;
+    if (!ticker || !this.activeMarkets.has(ticker)) return;
 
     // Apply snapshot to local orderbook
     this.orderbookManager.applySnapshot(data);
@@ -613,7 +780,7 @@ export class Bot {
 
   private async onOrderbookDelta(data: OrderbookDelta): Promise<void> {
     const ticker = data.market_ticker;
-    if (!ticker || !this.config.markets.includes(ticker)) return;
+    if (!ticker || !this.activeMarkets.has(ticker)) return;
 
     // Apply delta to local orderbook (FAST - no parsing needed)
     this.orderbookManager.applyDelta(data);
@@ -650,7 +817,7 @@ export class Bot {
     const ticker = data.market_ticker;
 
     // Skip if not in our market list
-    if (!this.config.markets.includes(ticker)) return;
+    if (!this.activeMarkets.has(ticker)) return;
 
     // Skip if paused or halted
     if (this.paused || this.risk.shouldHalt()) return;
@@ -749,6 +916,12 @@ export class Bot {
 
     // Log to file
     this.logFillToFile(data, realizedFromFill, pnlAfter.realizedToday);
+
+    // Track per-market P&L
+    const mktPnl = this.marketPnL.get(ticker) ?? { realized: 0, fills: 0, addedAt: Date.now() };
+    mktPnl.realized += realizedFromFill;
+    mktPnl.fills += 1;
+    this.marketPnL.set(ticker, mktPnl);
 
     // Notify strategy
     this.strategy.onFill(fill);
@@ -884,6 +1057,54 @@ export class Bot {
     }
   }
 
+  /**
+   * Handle scan completion - update active markets.
+   */
+  private async onScanComplete(result: ScanResult): Promise<void> {
+    this.lastScanResult = result;
+    const newTickers = new Set(result.markets.map((m) => m.ticker));
+
+    // Also keep any static config markets
+    for (const m of this.config.markets) {
+      newTickers.add(m);
+    }
+
+    // Find markets to add and remove
+    const toAdd: string[] = [];
+    const toRemove: string[] = [];
+
+    for (const ticker of newTickers) {
+      if (!this.activeMarkets.has(ticker)) {
+        toAdd.push(ticker);
+      }
+    }
+
+    for (const ticker of this.activeMarkets) {
+      // Don't remove static config markets
+      if (!newTickers.has(ticker) && !this.config.markets.includes(ticker)) {
+        // Don't remove if we have an open position
+        const pos = this.inventory.getPosition(ticker);
+        if (pos && pos.netExposure !== 0) {
+          continue; // Keep until position is flat
+        }
+        toRemove.push(ticker);
+      }
+    }
+
+    // Apply changes
+    for (const ticker of toRemove) {
+      await this.removeMarket(ticker);
+    }
+    for (const ticker of toAdd) {
+      await this.addMarket(ticker);
+    }
+
+    if (toAdd.length > 0 || toRemove.length > 0) {
+      log("Bot", `Scanner update: +${toAdd.length} -${toRemove.length} markets (total: ${this.activeMarkets.size})`);
+      this.logToFile(`Scanner update: +${toAdd.length} -${toRemove.length} (total: ${this.activeMarkets.size})`);
+    }
+  }
+
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
@@ -908,7 +1129,7 @@ export class Bot {
     const staleOrderMs = this.config.daemon.staleOrderMs;
 
     // Check each market we're quoting
-    for (const ticker of this.config.markets) {
+    for (const ticker of this.activeMarkets) {
       // Get current fair value
       const ob = this.orderbookManager.getOrderbook(ticker);
       const bbo = ob.getBBO();
