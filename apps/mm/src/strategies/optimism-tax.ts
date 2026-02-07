@@ -140,6 +140,47 @@ export class OptimismTaxStrategy extends BaseStrategy {
       quotes = this.computeMidRangeQuotes(snapshot, mid, expiryMultiplier);
     }
 
+    // ─── HOLD-TO-SETTLEMENT: zone-aware position management ───
+    // Once we have a position in the zone's INTENDED direction, suppress the
+    // side that would close it (= prevent round-trip churning). The strategy
+    // profits from holding to settlement, not from rapid open/close cycles.
+    //
+    // If we somehow end up in the WRONG direction for the zone, we allow
+    // the flattening side through so we can unwind.
+    const inventory = snapshot.position?.netExposure ?? 0;
+    if (inventory !== 0) {
+      for (const q of quotes) {
+        if (mid <= this.params.longShotThreshold) {
+          // LONGSHOT: intended position is SHORT YES (sell YES → hold to settlement)
+          if (inventory < 0) {
+            // Correctly short YES → suppress BID (don't buy YES back)
+            q.bidSize = 0;
+            q.bidPrice = 0;
+          }
+          // If long YES (wrong direction), let ASK through to flatten
+        } else if (mid >= this.params.nearlyCertainThreshold) {
+          // NEAR-CERTAINTY: intended position is LONG YES (buy YES → hold to settlement)
+          if (inventory > 0) {
+            // Correctly long YES → suppress ASK (don't sell YES back)
+            q.askSize = 0;
+            q.askPrice = 0;
+          }
+          // If short YES (wrong direction), let BID through to flatten
+        } else {
+          // MID-RANGE: no strong directional edge, hold whichever side we entered
+          if (inventory > 0) {
+            // Long YES → suppress ASK (don't sell back)
+            q.askSize = 0;
+            q.askPrice = 0;
+          } else {
+            // Short YES → suppress BID (don't buy back)
+            q.bidSize = 0;
+            q.bidPrice = 0;
+          }
+        }
+      }
+    }
+
     // ─── CRITICAL: Prevent spread-crossing (maker protection) ───
     // Ensure our bid never reaches the best ask and our ask never reaches
     // the best bid.  Without this guard the "edge" arithmetic can push
