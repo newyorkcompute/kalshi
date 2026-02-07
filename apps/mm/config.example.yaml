@@ -10,38 +10,92 @@ api:
 kalshi:
   demo: true  # IMPORTANT: Start with demo mode!
 
+# ═══════════════════════════════════════════════════════════════════
+# Scanner: Automatically discover profitable low-depth markets
+# ═══════════════════════════════════════════════════════════════════
+# When enabled, the scanner replaces (or supplements) the static
+# market list below. It finds markets where you have a structural
+# edge as a maker by scoring depth, category, spread, and volume.
+#
+# Run a one-shot scan:  npm start -- --scan
+# Run a deep scan:      npm start -- --scan --deep
+
+scanner:
+  enabled: false          # Set true to auto-discover markets
+  maxMarkets: 50          # Max markets to trade simultaneously
+  rescanIntervalMin: 30   # Rescan every 30 minutes
+  maxDepth: 2000          # Skip markets with >2000 total orderbook depth
+  minVolume: 50           # Skip dead markets (no recent volume)
+  maxWhaleOrder: 2000     # Skip markets with any single order >2000 contracts
+  minSpread: 2            # Skip markets with <2c spread (too competitive)
+  maxSpread: 25           # Skip markets with >25c spread (too illiquid)
+  minHoursToExpiry: 1     # Skip markets closing in <1 hour
+  deepScan: false         # Fetch orderbook per market (slower but accurate)
+  preferredCategories:    # Categories to prefer (empty = all except finance)
+    - entertainment
+    - sports
+    - crypto
+    - media
+
 # Strategy selection
 strategy:
-  name: adaptive  # 'symmetric', 'adaptive', or 'avellaneda'
+  # Options: 'symmetric', 'adaptive', 'avellaneda', 'optimism-tax'
+  name: optimism-tax
   
   symmetric:
-    spreadCents: 4        # Total spread (2¢ bid, 2¢ ask)
+    spreadCents: 4        # Total spread (2c bid, 2c ask)
     sizePerSide: 10       # Contracts per side
   
-  # RECOMMENDED: Adaptive strategy with Phase 2+3 enhancements
+  # Standard adaptive market making
   adaptive:
-    edgeCents: 1               # Quote 1¢ inside best bid/ask
+    edgeCents: 1               # Quote 1c inside best bid/ask
     minSpreadCents: 2          # Minimum profit margin
     sizePerSide: 5             # Contracts per side
-    maxMarketSpread: 15        # Skip illiquid markets (spread > 15¢)
-    skewFactor: 0.5            # Base inventory skew (higher = more aggressive)
-    maxInventorySkew: 30       # Stop adding to position at this level
-    # Phase 2 Elite MM options:
-    useMicroprice: true        # Use size-weighted mid as fair value
+    maxMarketSpread: 15        # Skip illiquid markets (spread > 15c)
+    skewFactor: 0.5            # Inventory skew
+    maxInventorySkew: 30       # Stop adding at this level
+    useMicroprice: true        # Size-weighted mid as fair value
     multiLevel: false          # Quote at multiple price levels
-    adverseSelectionMultiplier: 2.0  # Widen spread when being picked off
-    # Phase 3 Dynamic Skew (avoid getting stepped over in trending markets):
+    adverseSelectionMultiplier: 2.0  # Widen when being picked off
     dynamicSkew: true          # Auto-adjust skew based on orderbook imbalance
-    imbalanceSkewMultiplier: 1.5  # How much to boost skew when trend is against you
-    extremeImbalanceThreshold: 0.6  # Imbalance level considered "extreme" (0-1)
-    reduceRiskySideOnImbalance: true  # Reduce size on risky side when imbalance extreme
-    imbalanceSizeReduction: 0.5  # Size multiplier on risky side (0.5 = 50%)
-    skipRiskySideThreshold: 0.75  # At 75%+ imbalance, DON'T quote risky side at all
-    # Time-decay near expiry:
-    expiryWidenStartSec: 3600  # Start widening spread 1 hour before expiry
-    expiryStopQuoteSec: 300    # Stop quoting 5 minutes before expiry
-    expirySpreadMultiplier: 1.5  # 1.5x spread near expiry
+    imbalanceSkewMultiplier: 1.5
+    extremeImbalanceThreshold: 0.6
+    reduceRiskySideOnImbalance: true
+    imbalanceSizeReduction: 0.5
+    skipRiskySideThreshold: 0.75
+    expiryWidenStartSec: 3600
+    expiryStopQuoteSec: 300
+    expirySpreadMultiplier: 1.5
+  
+  # RECOMMENDED: Optimism Tax strategy
+  # Based on Becker (2025) research on maker-taker wealth transfer.
+  # Exploits the YES/NO asymmetry: takers overpay for YES longshots
+  # by up to 64 percentage points. This strategy sells into that flow.
+  optimism-tax:
+    # Zone thresholds
+    longShotThreshold: 15      # Below this = longshot zone (sell YES)
+    nearlyCertainThreshold: 85 # Above this = near-certainty zone (buy YES)
     
+    # Optimism tax parameters
+    optimismEdgeCents: 2       # Edge for optimism-tax trades
+    optimismSizeMultiplier: 1.5 # Size multiplier vs normal
+    maxLongshotExposure: 50    # Max contracts in any longshot market
+    
+    # Standard MM params (used in mid-range 16-84c)
+    edgeCents: 1
+    minSpreadCents: 2
+    sizePerSide: 5
+    maxMarketSpread: 20
+    skewFactor: 0.5
+    maxInventorySkew: 30
+    useMicroprice: true
+    adverseSelectionMultiplier: 2.5
+    
+    # Time-decay
+    expiryWidenStartSec: 3600
+    expiryStopQuoteSec: 300
+    expirySpreadMultiplier: 2.0
+
   # Avellaneda-Stoikov: Optimal market making with inventory risk
   avellaneda:
     gamma: 0.1            # Risk aversion (higher = wider spreads)
@@ -54,14 +108,16 @@ strategy:
     maxSpread: 20         # Cap spread (cents)
     useMarketExpiry: true # Use market expiry time if available
 
-# Markets to quote (at least one required)
-markets:
-  - KXBTC-25JAN03-B60K  # Example: BTC above 60k by Jan 3
+# Markets to quote (used when scanner is disabled, or added alongside scanner results)
+# When scanner is enabled, you can leave this empty -- the scanner will find markets.
+markets: []
+  # - KXBTC-26FEB10-B100K  # Example: BTC above 100k
+  # - KXNBA-26FEB06-LAL    # Example: Lakers game
 
 # Risk limits
 risk:
   maxPositionPerMarket: 100   # Max contracts per market
-  maxTotalExposure: 500       # Max total contracts
+  maxTotalExposure: 500       # Max total contracts across all markets
   maxDailyLoss: 5000          # Max loss in cents ($50)
   maxOrderSize: 25            # Max contracts per order
   minSpread: 2                # Min spread in cents
@@ -70,4 +126,3 @@ risk:
 daemon:
   staleOrderMs: 30000         # Cancel orders older than 30s
   reconnectDelayMs: 5000      # WebSocket reconnect delay
-

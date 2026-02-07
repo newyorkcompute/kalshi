@@ -8,11 +8,13 @@ export { type Strategy, type MarketSnapshot, BaseStrategy } from "./base.js";
 export { SymmetricStrategy, type SymmetricParams } from "./symmetric.js";
 export { AdaptiveStrategy, type AdaptiveParams } from "./adaptive.js";
 export { AvellanedaStoikovStrategy, type AvellanedaStoikovParams } from "./avellaneda.js";
+export { OptimismTaxStrategy, type OptimismTaxParams } from "./optimism-tax.js";
 
 import type { Strategy } from "./base.js";
 import { SymmetricStrategy } from "./symmetric.js";
 import { AdaptiveStrategy } from "./adaptive.js";
 import { AvellanedaStoikovStrategy } from "./avellaneda.js";
+import { OptimismTaxStrategy } from "./optimism-tax.js";
 import type { StrategyConfig } from "../config.js";
 
 /**
@@ -28,6 +30,9 @@ export function createStrategy(config: StrategyConfig): Strategy {
 
     case "avellaneda":
       return new AvellanedaStoikovStrategy(config.avellaneda);
+
+    case "optimism-tax":
+      return new OptimismTaxStrategy(config["optimism-tax"]);
 
     default:
       throw new Error(`Unknown strategy: ${config.name}`);
