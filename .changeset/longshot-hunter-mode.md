@@ -1,5 +1,5 @@
 ---
-"@nyc/mm": minor
+"@newyorkcompute/kalshi-mm": minor
 ---
 
 feat(mm): longshot hunter mode with safety cancellations
