@@ -71,6 +71,11 @@ const OptimismTaxStrategySchema = z.object({
   optimismEdgeCents: z.number().min(0).max(10).default(2),
   optimismSizeMultiplier: z.number().min(0.5).max(5).default(1.5),
   maxLongshotExposure: z.number().min(1).max(500).default(50),
+  // Mid-range control
+  skipMidRange: z.boolean().default(false),
+  // Volatility detection
+  volatilityWindow: z.number().min(3).max(50).default(10),
+  volatilityThresholdCents: z.number().min(1).max(50).default(8),
   // Standard MM params (mid-range)
   edgeCents: z.number().min(0).max(10).default(1),
   minSpreadCents: z.number().min(1).max(20).default(2),

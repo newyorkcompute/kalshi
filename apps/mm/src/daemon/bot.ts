@@ -1216,9 +1216,46 @@ export class Bot {
 
     // Get quotes from strategy
     const quotes = this.strategy.computeQuotes(snapshot);
-    
+
+    // If strategy returns no quotes, cancel any resting orders for this ticker.
+    // This prevents stale orders from remaining active in unsafe regimes
+    // (e.g. volatile mid-range or non-quotable markets).
+    if (quotes.length === 0) {
+      if (this.orderManager) {
+        try {
+          const cancelled = await this.orderManager.cancelAll(ticker);
+          if (cancelled > 0) {
+            log("Bot", `🧹 Cancelled ${cancelled} orders (no-quote) for ${ticker}`);
+            this.logToFile(`No-quote cancel: ${cancelled} orders for ${ticker}`);
+          }
+          // Invalidate quote cache so we re-quote fresh later
+          this.lastSentQuote.delete(ticker);
+        } catch (error) {
+          console.error(`[Bot] ⚠️ Failed to cancel orders for ${ticker} (no-quote):`, error);
+        }
+      }
+      return;
+    }
+
     // Apply drawdown position scaling
     const positionMultiplier = this.drawdownManager.getPositionMultiplier();
+
+    // If drawdown multiplier is 0, cancel any resting orders for this ticker.
+    if (positionMultiplier === 0) {
+      if (this.orderManager) {
+        try {
+          const cancelled = await this.orderManager.cancelAll(ticker);
+          if (cancelled > 0) {
+            log("Bot", `🧹 Cancelled ${cancelled} orders (drawdown=0) for ${ticker}`);
+            this.logToFile(`Drawdown=0 cancel: ${cancelled} orders for ${ticker}`);
+          }
+          this.lastSentQuote.delete(ticker);
+        } catch (error) {
+          console.error(`[Bot] ⚠️ Failed to cancel orders for ${ticker} (drawdown=0):`, error);
+        }
+      }
+      return;
+    }
 
     // Place quotes (risk check happens inside updateQuote)
     const maxOrderSize = this.config.risk.maxOrderSize;
@@ -1230,11 +1267,6 @@ export class Bot {
         bidSize: quote.bidSize === 0 ? 0 : Math.min(maxOrderSize, Math.max(1, Math.floor(quote.bidSize * positionMultiplier))),
         askSize: quote.askSize === 0 ? 0 : Math.min(maxOrderSize, Math.max(1, Math.floor(quote.askSize * positionMultiplier))),
       };
-      
-      // If multiplier is 0, skip quoting entirely
-      if (positionMultiplier === 0) {
-        continue;
-      }
       
       // QUOTE CACHING: Skip API call if quote is identical to last sent
       const lastQuote = this.lastSentQuote.get(scaledQuote.ticker);
