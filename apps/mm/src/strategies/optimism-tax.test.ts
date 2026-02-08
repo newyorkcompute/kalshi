@@ -25,14 +25,23 @@ describe("OptimismTaxStrategy", () => {
 
   describe("zone detection", () => {
     it("uses longshot logic when YES price is low (1-15c)", () => {
+      // Fresh instance to avoid volatility cross-contamination
+      const strat = new OptimismTaxStrategy({
+        sizePerSide: 5,
+        optimismSizeMultiplier: 1.5,
+        longShotThreshold: 15,
+        nearlyCertainThreshold: 85,
+        maxInventorySkew: 30,
+      });
       const snapshot = makeSnapshot({
+        ticker: "ZONE-LONGSHOT",
         bestBid: 5,
         bestAsk: 10,
         mid: 7.5,
         spread: 5,
       });
 
-      const quotes = strategy.computeQuotes(snapshot);
+      const quotes = strat.computeQuotes(snapshot);
       expect(quotes.length).toBe(1);
 
       // In longshot zone, ask size should be larger than bid size
@@ -42,14 +51,22 @@ describe("OptimismTaxStrategy", () => {
     });
 
     it("uses near-certainty logic when YES price is high (85-99c)", () => {
+      const strat = new OptimismTaxStrategy({
+        sizePerSide: 5,
+        optimismSizeMultiplier: 1.5,
+        longShotThreshold: 15,
+        nearlyCertainThreshold: 85,
+        maxInventorySkew: 30,
+      });
       const snapshot = makeSnapshot({
+        ticker: "ZONE-CERTAIN",
         bestBid: 90,
         bestAsk: 95,
         mid: 92.5,
         spread: 5,
       });
 
-      const quotes = strategy.computeQuotes(snapshot);
+      const quotes = strat.computeQuotes(snapshot);
       expect(quotes.length).toBe(1);
 
       // In near-certainty zone, bid size should be larger than ask size
@@ -59,14 +76,22 @@ describe("OptimismTaxStrategy", () => {
     });
 
     it("uses mid-range logic for 16-84c prices", () => {
+      const strat = new OptimismTaxStrategy({
+        sizePerSide: 5,
+        optimismSizeMultiplier: 1.5,
+        longShotThreshold: 15,
+        nearlyCertainThreshold: 85,
+        maxInventorySkew: 30,
+      });
       const snapshot = makeSnapshot({
+        ticker: "ZONE-MID",
         bestBid: 45,
         bestAsk: 50,
         mid: 47.5,
         spread: 5,
       });
 
-      const quotes = strategy.computeQuotes(snapshot);
+      const quotes = strat.computeQuotes(snapshot);
       expect(quotes.length).toBe(1);
 
       // In mid-range, sizes should be equal (standard MM)
@@ -137,20 +162,24 @@ describe("OptimismTaxStrategy", () => {
 
   describe("time-decay", () => {
     it("stops quoting when very close to expiry", () => {
+      const strat = new OptimismTaxStrategy({ sizePerSide: 5 });
       const snapshot = makeSnapshot({
+        ticker: "DECAY-STOP",
         timeToExpiry: 60, // 1 minute left
       });
 
-      const quotes = strategy.computeQuotes(snapshot);
+      const quotes = strat.computeQuotes(snapshot);
       expect(quotes.length).toBe(0);
     });
 
     it("quotes normally when far from expiry", () => {
+      const strat = new OptimismTaxStrategy({ sizePerSide: 5 });
       const snapshot = makeSnapshot({
+        ticker: "DECAY-NORMAL",
         timeToExpiry: 7200, // 2 hours
       });
 
-      const quotes = strategy.computeQuotes(snapshot);
+      const quotes = strat.computeQuotes(snapshot);
       expect(quotes.length).toBe(1);
     });
   });
@@ -194,6 +223,237 @@ describe("OptimismTaxStrategy", () => {
     it("returns empty for very wide spread", () => {
       const quotes = strategy.computeQuotes(makeSnapshot({ bestBid: 10, bestAsk: 80, spread: 70 }));
       expect(quotes.length).toBe(0);
+    });
+  });
+
+  describe("volatility detection", () => {
+    it("detects volatile market from rapid price swings", () => {
+      const strat = new OptimismTaxStrategy({
+        sizePerSide: 5,
+        volatilityWindow: 5,
+        volatilityThresholdCents: 8,
+      });
+
+      // Simulate a live event with 15¢ swing over 5 snapshots
+      const prices = [50, 55, 60, 45, 50];
+      for (const p of prices) {
+        strat.computeQuotes(makeSnapshot({
+          bestBid: p - 2,
+          bestAsk: p + 2,
+          mid: p,
+          spread: 4,
+        }));
+      }
+
+      expect(strat.isMarketVolatile("TEST-MARKET")).toBe(true);
+    });
+
+    it("does NOT flag stable market as volatile", () => {
+      const strat = new OptimismTaxStrategy({
+        sizePerSide: 5,
+        volatilityWindow: 5,
+        volatilityThresholdCents: 8,
+      });
+
+      // Stable market: only 3¢ total movement
+      const prices = [50, 51, 52, 51, 50];
+      for (const p of prices) {
+        strat.computeQuotes(makeSnapshot({
+          bestBid: p - 2,
+          bestAsk: p + 2,
+          mid: p,
+          spread: 4,
+        }));
+      }
+
+      expect(strat.isMarketVolatile("TEST-MARKET")).toBe(false);
+    });
+
+    it("returns empty quotes for volatile mid-range with no position", () => {
+      const strat = new OptimismTaxStrategy({
+        sizePerSide: 5,
+        volatilityWindow: 5,
+        volatilityThresholdCents: 8,
+      });
+
+      // Build up volatile history (15¢ swing)
+      const prices = [50, 55, 60, 45, 50];
+      for (const p of prices) {
+        strat.computeQuotes(makeSnapshot({
+          bestBid: p - 2,
+          bestAsk: p + 2,
+          mid: p,
+          spread: 4,
+        }));
+      }
+
+      // Now try to quote with no position — should get nothing
+      const quotes = strat.computeQuotes(makeSnapshot({
+        bestBid: 48,
+        bestAsk: 52,
+        mid: 50,
+        spread: 4,
+        position: null,
+      }));
+
+      expect(quotes.length).toBe(0);
+    });
+
+    it("only allows flattening side for volatile mid-range with long position", () => {
+      const strat = new OptimismTaxStrategy({
+        sizePerSide: 5,
+        volatilityWindow: 5,
+        volatilityThresholdCents: 8,
+      });
+
+      // Build up volatile history
+      const prices = [50, 55, 60, 45, 50];
+      for (const p of prices) {
+        strat.computeQuotes(makeSnapshot({
+          bestBid: p - 2,
+          bestAsk: p + 2,
+          mid: p,
+          spread: 4,
+        }));
+      }
+
+      // Quote with a long YES position — only ask (sell) should be active
+      const quotes = strat.computeQuotes(makeSnapshot({
+        bestBid: 48,
+        bestAsk: 52,
+        mid: 50,
+        spread: 4,
+        position: {
+          ticker: "TEST-MARKET",
+          yesContracts: 5,
+          noContracts: 0,
+          netExposure: 5,
+          costBasis: 250,
+          yesCostBasis: 250,
+          noCostBasis: 0,
+          unrealizedPnL: 0,
+        },
+      }));
+
+      expect(quotes.length).toBe(1);
+      expect(quotes[0].bidSize).toBe(0); // Suppress bid (don't buy more)
+      expect(quotes[0].askSize).toBeGreaterThan(0); // Allow sell to flatten
+    });
+
+    it("only allows flattening side for volatile mid-range with short position", () => {
+      const strat = new OptimismTaxStrategy({
+        sizePerSide: 5,
+        volatilityWindow: 5,
+        volatilityThresholdCents: 8,
+      });
+
+      // Build up volatile history
+      const prices = [50, 55, 60, 45, 50];
+      for (const p of prices) {
+        strat.computeQuotes(makeSnapshot({
+          bestBid: p - 2,
+          bestAsk: p + 2,
+          mid: p,
+          spread: 4,
+        }));
+      }
+
+      // Quote with a short YES position — only bid (buy) should be active
+      const quotes = strat.computeQuotes(makeSnapshot({
+        bestBid: 48,
+        bestAsk: 52,
+        mid: 50,
+        spread: 4,
+        position: {
+          ticker: "TEST-MARKET",
+          yesContracts: 0,
+          noContracts: 5,
+          netExposure: -5,
+          costBasis: 250,
+          yesCostBasis: 0,
+          noCostBasis: 250,
+          unrealizedPnL: 0,
+        },
+      }));
+
+      expect(quotes.length).toBe(1);
+      expect(quotes[0].askSize).toBe(0); // Suppress ask (don't sell more)
+      expect(quotes[0].bidSize).toBeGreaterThan(0); // Allow buy to flatten
+    });
+
+    it("allows normal spread capture on stable mid-range even with position", () => {
+      const strat = new OptimismTaxStrategy({
+        sizePerSide: 5,
+        volatilityWindow: 5,
+        volatilityThresholdCents: 8,
+      });
+
+      // Stable market
+      const prices = [50, 51, 50, 51, 50];
+      for (const p of prices) {
+        strat.computeQuotes(makeSnapshot({
+          bestBid: p - 3,
+          bestAsk: p + 3,
+          mid: p,
+          spread: 6,
+        }));
+      }
+
+      // With a position — both sides should still be active for spread capture
+      const quotes = strat.computeQuotes(makeSnapshot({
+        bestBid: 47,
+        bestAsk: 53,
+        mid: 50,
+        spread: 6,
+        position: {
+          ticker: "TEST-MARKET",
+          yesContracts: 3,
+          noContracts: 0,
+          netExposure: 3,
+          costBasis: 150,
+          yesCostBasis: 150,
+          noCostBasis: 0,
+          unrealizedPnL: 0,
+        },
+      }));
+
+      expect(quotes.length).toBe(1);
+      expect(quotes[0].bidSize).toBeGreaterThan(0);
+      expect(quotes[0].askSize).toBeGreaterThan(0);
+    });
+
+    it("does NOT suppress longshot/near-certainty zones for volatility", () => {
+      const strat = new OptimismTaxStrategy({
+        sizePerSide: 5,
+        volatilityWindow: 5,
+        volatilityThresholdCents: 8,
+        longShotThreshold: 15,
+      });
+
+      // Build volatility history in longshot range
+      const prices = [5, 10, 3, 12, 5];
+      for (const p of prices) {
+        strat.computeQuotes(makeSnapshot({
+          ticker: "LONGSHOT-MKT",
+          bestBid: Math.max(1, p - 2),
+          bestAsk: Math.min(99, p + 2),
+          mid: p,
+          spread: 4,
+        }));
+      }
+
+      // Should still quote in longshot zone regardless of volatility
+      const quotes = strat.computeQuotes(makeSnapshot({
+        ticker: "LONGSHOT-MKT",
+        bestBid: 5,
+        bestAsk: 10,
+        mid: 7.5,
+        spread: 5,
+        position: null,
+      }));
+
+      expect(quotes.length).toBe(1);
+      expect(quotes[0].askSize).toBeGreaterThan(0); // Should still sell YES
     });
   });
 

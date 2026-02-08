@@ -62,6 +62,12 @@ export interface OptimismTaxParams {
   /** Spread multiplier when adverse selection detected (default 2.5) */
   adverseSelectionMultiplier: number;
 
+  // ─── Volatility Detection (mid-range protection) ───
+  /** Number of recent snapshots to track per market for volatility (default 10) */
+  volatilityWindow: number;
+  /** If max-min mid-price over window exceeds this (cents), market is "volatile" (default 8) */
+  volatilityThresholdCents: number;
+
   // ─── Time-decay near expiry ───
   /** Seconds before expiry to start widening (default 3600) */
   expiryWidenStartSec: number;
@@ -89,6 +95,10 @@ const DEFAULT_PARAMS: OptimismTaxParams = {
   useMicroprice: true,
   adverseSelectionMultiplier: 2.5,
 
+  // Volatility detection
+  volatilityWindow: 10,
+  volatilityThresholdCents: 8,
+
   // Time-decay
   expiryWidenStartSec: 3600,
   expiryStopQuoteSec: 300,
@@ -99,9 +109,54 @@ export class OptimismTaxStrategy extends BaseStrategy {
   readonly name = "optimism-tax";
   private params: OptimismTaxParams;
 
+  // ─── Volatility tracking ───
+  // Rolling window of recent mid-prices per ticker to detect live/volatile markets.
+  // If max-min over window > volatilityThresholdCents, market is "volatile" and
+  // we avoid opening new mid-range positions (adverse selection risk is too high).
+  private midPriceHistory: Map<string, number[]> = new Map();
+
   constructor(params: Partial<OptimismTaxParams> = {}) {
     super();
     this.params = { ...DEFAULT_PARAMS, ...params };
+  }
+
+  /**
+   * Track mid-price and return whether the market is currently volatile.
+   * Volatile = max - min of recent mid-prices exceeds threshold.
+   */
+  private trackVolatility(ticker: string, mid: number): boolean {
+    let history = this.midPriceHistory.get(ticker);
+    if (!history) {
+      history = [];
+      this.midPriceHistory.set(ticker, history);
+    }
+
+    history.push(mid);
+
+    // Keep only the most recent window
+    if (history.length > this.params.volatilityWindow) {
+      history.splice(0, history.length - this.params.volatilityWindow);
+    }
+
+    // Need at least 3 data points to make a volatility judgment
+    if (history.length < 3) {
+      return false;
+    }
+
+    const maxPrice = Math.max(...history);
+    const minPrice = Math.min(...history);
+    return (maxPrice - minPrice) >= this.params.volatilityThresholdCents;
+  }
+
+  /**
+   * Check if a market is currently volatile (read-only, for testing).
+   */
+  isMarketVolatile(ticker: string): boolean {
+    const history = this.midPriceHistory.get(ticker);
+    if (!history || history.length < 3) return false;
+    const maxPrice = Math.max(...history);
+    const minPrice = Math.min(...history);
+    return (maxPrice - minPrice) >= this.params.volatilityThresholdCents;
   }
 
   computeQuotes(snapshot: MarketSnapshot): Quote[] {
@@ -112,6 +167,9 @@ export class OptimismTaxStrategy extends BaseStrategy {
     const { bestBid, bestAsk, microprice, timeToExpiry } = snapshot;
     const mid = (this.params.useMicroprice && microprice) ? microprice : (bestBid + bestAsk) / 2;
     const marketSpread = bestAsk - bestBid;
+
+    // Track volatility for this market
+    const isVolatile = this.trackVolatility(snapshot.ticker, mid);
 
     // ─── Time-decay near expiry ───
     if (timeToExpiry !== undefined && timeToExpiry <= this.params.expiryStopQuoteSec) {
@@ -141,11 +199,17 @@ export class OptimismTaxStrategy extends BaseStrategy {
     }
 
     // ─── HOLD-TO-SETTLEMENT: zone-aware position management ───
-    // Once we have a position in the zone's INTENDED direction, suppress the
-    // side that would close it (= prevent round-trip churning). The strategy
-    // profits from holding to settlement, not from rapid open/close cycles.
+    // In LONGSHOT and NEAR-CERTAINTY zones, we have a strong directional edge
+    // (57% mispricing at tails per Becker 2026). Once we have a position in
+    // the intended direction, suppress the closing side to hold to settlement.
     //
-    // If we somehow end up in the WRONG direction for the zone, we allow
+    // In MID-RANGE (16-84¢), behavior depends on volatility:
+    //   - STABLE markets: SPREAD CAPTURE — quote both sides, pocket the spread.
+    //   - VOLATILE markets (live events): DON'T OPEN new positions (adverse
+    //     selection kills spread capture when prices trend with match outcomes).
+    //     If already in a position, only allow the flattening side.
+    //
+    // If we somehow end up in the WRONG direction for a zone, we allow
     // the flattening side through so we can unwind.
     const inventory = snapshot.position?.netExposure ?? 0;
     if (inventory !== 0) {
@@ -166,19 +230,28 @@ export class OptimismTaxStrategy extends BaseStrategy {
             q.askPrice = 0;
           }
           // If short YES (wrong direction), let BID through to flatten
-        } else {
-          // MID-RANGE: no strong directional edge, hold whichever side we entered
+        } else if (isVolatile) {
+          // VOLATILE MID-RANGE: Adverse selection is too high for spread capture.
+          // Only allow the side that flattens our position.
           if (inventory > 0) {
-            // Long YES → suppress ASK (don't sell back)
-            q.askSize = 0;
-            q.askPrice = 0;
-          } else {
-            // Short YES → suppress BID (don't buy back)
+            // Long YES → only allow ASK (sell YES to flatten)
             q.bidSize = 0;
             q.bidPrice = 0;
+          } else {
+            // Short YES → only allow BID (buy YES to flatten)
+            q.askSize = 0;
+            q.askPrice = 0;
           }
         }
+        // STABLE MID-RANGE: Allow both sides to remain active for spread capture.
+        // The computeMidRangeQuotes() method already handles inventory skew
+        // via Avellaneda-Stoikov style adjustments and maxInventorySkew limits,
+        // so we don't need to suppress either side here.
       }
+    } else if (isVolatile && mid > this.params.longShotThreshold && mid < this.params.nearlyCertainThreshold) {
+      // VOLATILE MID-RANGE with NO position: Don't open new positions.
+      // The adverse selection risk outweighs the ~2.66% mid-range edge.
+      return [];
     }
 
     // ─── CRITICAL: Prevent spread-crossing (maker protection) ───
@@ -193,8 +266,10 @@ export class OptimismTaxStrategy extends BaseStrategy {
       if (q.askSize > 0 && q.askPrice <= bestBid) {
         q.askPrice = this.clampPrice(bestBid + 1);
       }
-      // If after clamping the spread collapses, zero out the offending side
-      if (q.bidPrice >= q.askPrice) {
+      // If after clamping the spread collapses, zero out the offending side.
+      // Only check when BOTH sides are active — if one side was already
+      // suppressed (price=0), this comparison is meaningless.
+      if (q.bidSize > 0 && q.askSize > 0 && q.bidPrice >= q.askPrice) {
         // Keep whichever side the zone logic considers more important:
         // in near-certainty we want the bid, in longshot the ask, in mid both.
         if (mid >= this.params.nearlyCertainThreshold) {
