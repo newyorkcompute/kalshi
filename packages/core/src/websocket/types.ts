@@ -19,10 +19,12 @@ export interface KalshiWsConfig {
   demo?: boolean;
   /** Auto-reconnect on disconnect (default: true) */
   autoReconnect?: boolean;
-  /** Reconnect delay in ms (default: 1000) */
+  /** Base reconnect delay in ms (default: 1000). Grows with exponential backoff. */
   reconnectDelay?: number;
-  /** Max reconnect attempts (default: 10) */
+  /** Max reconnect attempts before giving up. Set to Infinity for unlimited. (default: Infinity) */
   maxReconnectAttempts?: number;
+  /** Maximum reconnect delay cap in ms (default: 60000 = 60s). Prevents unbounded backoff. */
+  maxReconnectDelay?: number;
 }
 
 /** WebSocket endpoints */

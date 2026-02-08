@@ -134,8 +134,8 @@ export function createControlPlane(bot: Bot) {
       return c.json({ error: "Ticker is required" }, 400);
     }
 
-    await bot.addMarket(ticker);
-    return c.json({ added: ticker, totalMarkets: bot.getActiveMarkets().length });
+    await bot.addMarket(ticker, true); // Pin manually-added markets so scanner won't remove them
+    return c.json({ added: ticker, pinned: true, totalMarkets: bot.getActiveMarkets().length });
   });
 
   // Remove a market manually

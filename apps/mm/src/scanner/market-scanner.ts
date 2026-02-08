@@ -529,6 +529,16 @@ export class MarketScanner {
     const category = market.category ?? "";
     if (shouldAvoidCategory(category, market.ticker)) return false;
 
+    // If preferredCategories is set, only allow markets whose detected label matches
+    if (this.config.preferredCategories.length > 0) {
+      const profile = getCategoryProfile(category, market.ticker, market.title ?? "");
+      const detectedLabel = profile.label.toLowerCase();
+      const isPreferred = this.config.preferredCategories.some(
+        (pref) => detectedLabel === pref.toLowerCase()
+      );
+      if (!isPreferred) return false;
+    }
+
     return true;
   }
 
