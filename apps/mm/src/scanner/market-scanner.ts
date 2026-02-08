@@ -592,17 +592,19 @@ export class MarketScanner {
     const oi = market.open_interest ?? 0;
     const whalePenalty = oi > 10000 ? 0.5 : oi > 5000 ? 0.3 : 0;
 
-    // Longshot bonus: longshot markets have higher optimism tax
-    const longshotBonus = isLongshot ? 0.15 : 0;
+    // Longshot bonus: longshot markets have MUCH higher optimism tax
+    // Becker (2026): 57% mispricing at 1¢ vs 2.66% at 50¢ — tails are 20x more profitable
+    const longshotBonus = isLongshot ? 0.30 : 0;
 
     // ─── Composite Score ───
-    // Weighted combination (tune these weights based on results)
+    // Weighted combination — longshot bonus doubled to prioritize tail markets
+    // where maker edge is strongest per Becker's research
     const compositeScore =
-      depthScore * 0.30 +          // 30% - Low depth is king
-      categoryScore * 0.25 +       // 25% - Category matters a lot
-      spreadScore * 0.15 +         // 15% - Good spread
-      volumeScore * 0.15 +         // 15% - Some volume needed
-      longshotBonus * 0.15 -       // 15% - Longshot bonus
+      depthScore * 0.25 +          // 25% - Low depth is important
+      categoryScore * 0.20 +       // 20% - Category matters (emotional > efficient)
+      spreadScore * 0.10 +         // 10% - Good spread
+      volumeScore * 0.15 +         // 15% - Some volume needed for fills
+      longshotBonus * 0.30 -       // 30% - Longshot bonus (biggest edge per research)
       whalePenalty;                 // Penalty for whale markets
 
     return {
@@ -734,16 +736,16 @@ export class MarketScanner {
       depth.maxOrderSize > 1000 ? 0.2 :
       depth.maxOrderSize > 500 ? 0.1 : 0;
 
-    // Longshot bonus
-    const longshotBonus = isLongshot ? 0.15 : 0;
+    // Longshot bonus: tails are 20x more profitable per Becker (2026)
+    const longshotBonus = isLongshot ? 0.30 : 0;
 
-    // Composite score
+    // Composite score — matches fast scan weights
     const compositeScore =
-      depthScore * 0.30 +
-      categoryScore * 0.25 +
-      spreadScore * 0.15 +
+      depthScore * 0.25 +
+      categoryScore * 0.20 +
+      spreadScore * 0.10 +
       volumeScore * 0.15 +
-      longshotBonus * 0.15 -
+      longshotBonus * 0.30 -
       whalePenalty;
 
     return {

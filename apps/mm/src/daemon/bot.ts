@@ -1305,6 +1305,24 @@ export class Bot {
    */
   private async onScanComplete(result: ScanResult): Promise<void> {
     this.lastScanResult = result;
+
+    // GUARD: If the scan found 0 markets but we have active markets,
+    // this is likely a failed/partial scan (e.g. API error, ECONNRESET).
+    // Don't remove existing markets based on a bad scan.
+    if (result.markets.length === 0 && this.activeMarkets.size > 0) {
+      console.log("[Bot] ⚠️ Scanner returned 0 markets — likely a failed scan. Keeping existing markets.");
+      this.logToFile("Scanner returned 0 markets, keeping existing (likely failed scan)");
+      return;
+    }
+
+    // GUARD: If the scan fetched far fewer markets than expected (partial scan),
+    // don't remove existing markets. A normal full scan processes 100k+ markets.
+    if (result.totalScanned < 50000 && this.activeMarkets.size > 0 && result.markets.length < this.activeMarkets.size) {
+      console.log(`[Bot] ⚠️ Partial scan (${result.totalScanned} markets scanned). Keeping existing markets.`);
+      this.logToFile(`Partial scan (${result.totalScanned} scanned), keeping existing markets`);
+      return;
+    }
+
     const newTickers = new Set(result.markets.map((m) => m.ticker));
 
     // Also keep any static config markets
