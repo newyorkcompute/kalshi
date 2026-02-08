@@ -62,6 +62,10 @@ export interface OptimismTaxParams {
   /** Spread multiplier when adverse selection detected (default 2.5) */
   adverseSelectionMultiplier: number;
 
+  // ─── Mid-range control ───
+  /** If true, skip mid-range entirely — only trade longshot + near-certainty (default false) */
+  skipMidRange: boolean;
+
   // ─── Volatility Detection (mid-range protection) ───
   /** Number of recent snapshots to track per market for volatility (default 10) */
   volatilityWindow: number;
@@ -94,6 +98,9 @@ const DEFAULT_PARAMS: OptimismTaxParams = {
   maxInventorySkew: 30,
   useMicroprice: true,
   adverseSelectionMultiplier: 2.5,
+
+  // Mid-range control
+  skipMidRange: false,
 
   // Volatility detection
   volatilityWindow: 10,
@@ -194,6 +201,11 @@ export class OptimismTaxStrategy extends BaseStrategy {
       quotes = this.computeLongshotQuotes(snapshot, mid, expiryMultiplier);
     } else if (mid >= this.params.nearlyCertainThreshold) {
       quotes = this.computeNearlyCertainQuotes(snapshot, mid, expiryMultiplier);
+    } else if (this.params.skipMidRange) {
+      // LONGSHOT HUNTER MODE: Skip mid-range entirely.
+      // The edge is 20x higher at tails (57% vs 2.66% at 50¢ per Becker).
+      // Mid-range spread capture is a coin flip with high variance — not worth it.
+      return [];
     } else {
       quotes = this.computeMidRangeQuotes(snapshot, mid, expiryMultiplier);
     }

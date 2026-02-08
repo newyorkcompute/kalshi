@@ -457,6 +457,67 @@ describe("OptimismTaxStrategy", () => {
     });
   });
 
+  describe("skipMidRange", () => {
+    it("returns empty quotes for mid-range when skipMidRange is true", () => {
+      const strat = new OptimismTaxStrategy({
+        sizePerSide: 5,
+        skipMidRange: true,
+        longShotThreshold: 15,
+        nearlyCertainThreshold: 85,
+      });
+
+      const quotes = strat.computeQuotes(makeSnapshot({
+        ticker: "SKIP-MID",
+        bestBid: 45,
+        bestAsk: 50,
+        mid: 47.5,
+        spread: 5,
+      }));
+
+      expect(quotes.length).toBe(0);
+    });
+
+    it("still quotes longshot zone when skipMidRange is true", () => {
+      const strat = new OptimismTaxStrategy({
+        sizePerSide: 5,
+        skipMidRange: true,
+        longShotThreshold: 15,
+        nearlyCertainThreshold: 85,
+      });
+
+      const quotes = strat.computeQuotes(makeSnapshot({
+        ticker: "SKIP-LONGSHOT",
+        bestBid: 5,
+        bestAsk: 10,
+        mid: 7.5,
+        spread: 5,
+      }));
+
+      expect(quotes.length).toBe(1);
+      expect(quotes[0].askSize).toBeGreaterThan(0);
+    });
+
+    it("still quotes near-certainty zone when skipMidRange is true", () => {
+      const strat = new OptimismTaxStrategy({
+        sizePerSide: 5,
+        skipMidRange: true,
+        longShotThreshold: 15,
+        nearlyCertainThreshold: 85,
+      });
+
+      const quotes = strat.computeQuotes(makeSnapshot({
+        ticker: "SKIP-CERTAIN",
+        bestBid: 90,
+        bestAsk: 96,
+        mid: 93,
+        spread: 6,
+      }));
+
+      expect(quotes.length).toBe(1);
+      expect(quotes[0].bidSize).toBeGreaterThan(0);
+    });
+  });
+
   describe("updateParams", () => {
     it("updates threshold parameters", () => {
       const strat = new OptimismTaxStrategy();
