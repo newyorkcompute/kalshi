@@ -82,6 +82,16 @@ export interface BotState {
   risk: ReturnType<RiskManager["getStatus"]>;
   drawdown: ReturnType<DrawdownManager["getStatus"]>;
   circuitBreaker: ReturnType<CircuitBreaker["getStatus"]>;
+  connectionHealth: {
+    /** WS connection state */
+    wsState: string;
+    /** Seconds since last data message, or null if no data yet */
+    lastDataAgeSec: number | null;
+    /** Seconds we've been disconnected, or null if connected */
+    disconnectedForSec: number | null;
+    /** Total reconnect attempts since last successful connection */
+    reconnectAttempts: number;
+  };
   scanner?: {
     enabled: boolean;
     lastScan: Date | null;
@@ -126,6 +136,9 @@ export class Bot {
   // Dynamic market list (scanner can modify this)
   private activeMarkets: Set<string> = new Set();
 
+  // Manually-added (pinned) markets — scanner will never remove these
+  private pinnedMarkets: Set<string> = new Set();
+
   // Per-market P&L tracking (for dropping underperformers)
   private marketPnL: Map<string, { realized: number; fills: number; addedAt: number }> = new Map();
 
@@ -168,6 +181,14 @@ export class Bot {
   // Stale order enforcement
   private lastStaleCheck: number = 0;
   private readonly STALE_CHECK_INTERVAL_MS = 10_000; // Check every 10 seconds
+
+  // Connection health monitoring
+  private lastHealthCheck: number = 0;
+  private readonly HEALTH_CHECK_INTERVAL_MS = 30_000; // Check every 30 seconds
+  private readonly STALE_DATA_THRESHOLD_MS = 120_000; // 2 minutes without data = stale
+  private readonly FORCE_RECONNECT_THRESHOLD_MS = 300_000; // 5 minutes without data = force reconnect
+  private disconnectedSince: number | null = null; // When did we lose the connection?
+  private ordersCleanedOnDisconnect = false; // Have we cancelled orders since disconnect?
 
   constructor(config: Config) {
     // Generate unique session ID
@@ -359,6 +380,9 @@ export class Bot {
           this.orderManager.cleanup();
         }
 
+        // === CONNECTION HEALTH MONITOR ===
+        await this.checkConnectionHealth();
+
         // Check if circuit breaker has cooled down - auto-resume
         if (this.paused && !this.circuitBreaker.isTriggered() && !this.drawdownManager.shouldHalt()) {
           console.log("[Bot] 🟢 Risk controls cleared - auto-resuming");
@@ -472,6 +496,9 @@ export class Bot {
    * Get current bot state
    */
   getState(): BotState {
+    const now = Date.now();
+    const lastData = this.ws?.lastDataReceived ?? 0;
+
     return {
       running: this.running,
       paused: this.paused,
@@ -483,6 +510,14 @@ export class Bot {
       risk: this.risk.getStatus(this.inventory),
       drawdown: this.drawdownManager.getStatus(),
       circuitBreaker: this.circuitBreaker.getStatus(),
+      connectionHealth: {
+        wsState: this.ws?.connectionState ?? "disconnected",
+        lastDataAgeSec: lastData > 0 ? Math.floor((now - lastData) / 1000) : null,
+        disconnectedForSec: this.disconnectedSince
+          ? Math.floor((now - this.disconnectedSince) / 1000)
+          : null,
+        reconnectAttempts: 0, // WS client doesn't expose this, but we track it via logs
+      },
       scanner: this.scannerEnabled ? {
         enabled: true,
         lastScan: this.lastScanResult?.timestamp ?? null,
@@ -500,10 +535,16 @@ export class Bot {
 
   /**
    * Add a market dynamically.
+   * @param ticker Market ticker to add
+   * @param pin If true, mark as "pinned" so the scanner won't remove it
    */
-  async addMarket(ticker: string): Promise<void> {
+  async addMarket(ticker: string, pin = false): Promise<void> {
+    if (pin) {
+      this.pinnedMarkets.add(ticker);
+    }
+
     if (this.activeMarkets.has(ticker)) {
-      log("Bot", `Market ${ticker} already active`);
+      if (pin) log("Bot", `Market ${ticker} pinned (already active)`);
       return;
     }
 
@@ -547,6 +588,7 @@ export class Bot {
     }
 
     this.activeMarkets.delete(ticker);
+    this.pinnedMarkets.delete(ticker); // Unpin if pinned
     this.lastSentQuote.delete(ticker);
     this.lastQuoteUpdate.delete(ticker);
     this.lastBBO.delete(ticker);
@@ -619,7 +661,21 @@ export class Bot {
   // ========== Private Methods ==========
 
   private async onConnect(): Promise<void> {
-    console.log("[Bot] WebSocket connected");
+    const wasDisconnected = this.disconnectedSince !== null;
+    const downtime = wasDisconnected
+      ? ((Date.now() - this.disconnectedSince!) / 1000).toFixed(0)
+      : null;
+
+    // Reset disconnect tracking
+    this.disconnectedSince = null;
+    this.ordersCleanedOnDisconnect = false;
+
+    if (wasDisconnected) {
+      console.log(`[Bot] ✅ WebSocket reconnected after ${downtime}s downtime`);
+      this.logToFile(`WebSocket reconnected after ${downtime}s`);
+    } else {
+      console.log("[Bot] WebSocket connected");
+    }
 
     // Subscribe to ticker + orderbook_delta for our markets, plus fill channel
     if (this.ws) {
@@ -629,10 +685,40 @@ export class Bot {
       log("Bot", `Subscribed to ${marketList.length} markets`);
       console.log("[Bot] Waiting for market data...");
     }
+
+    // If reconnecting, sync positions in case we missed fills
+    if (wasDisconnected) {
+      await this.syncPositions();
+    }
   }
 
-  private onDisconnect(): void {
-    console.log("[Bot] WebSocket disconnected");
+  private async onDisconnect(): Promise<void> {
+    this.disconnectedSince = Date.now();
+    console.log("[Bot] ⚠️ WebSocket disconnected — auto-reconnect will retry");
+    this.logToFile("WebSocket disconnected");
+
+    // Safety: cancel all resting orders since we can't monitor the market
+    await this.cancelOrdersOnDisconnect();
+  }
+
+  /**
+   * Cancel all resting orders when disconnected (safety measure).
+   * We can't monitor fills or market changes without the WebSocket,
+   * so leaving orders on the book is dangerous.
+   */
+  private async cancelOrdersOnDisconnect(): Promise<void> {
+    if (this.ordersCleanedOnDisconnect || !this.orderManager) return;
+
+    try {
+      const cancelled = await this.orderManager.cancelAll();
+      this.ordersCleanedOnDisconnect = true;
+      if (cancelled > 0) {
+        console.log(`[Bot] 🧹 Cancelled ${cancelled} orders (safety: WS disconnected)`);
+        this.logToFile(`Cancelled ${cancelled} orders on disconnect`);
+      }
+    } catch (error) {
+      console.error("[Bot] Failed to cancel orders on disconnect:", error);
+    }
   }
 
   /**
@@ -792,6 +878,67 @@ export class Bot {
 
   private onError(error: Error): void {
     console.error("[Bot] WebSocket error:", error.message);
+  }
+
+  /**
+   * === CONNECTION HEALTH MONITOR ===
+   * Runs periodically in the main loop. Detects stale connections
+   * and forces a full reconnect if the WS is silently dead.
+   */
+  private async checkConnectionHealth(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastHealthCheck < this.HEALTH_CHECK_INTERVAL_MS) return;
+    this.lastHealthCheck = now;
+
+    if (!this.ws) return;
+
+    // Check 1: Are we currently disconnected/reconnecting?
+    if (this.disconnectedSince) {
+      const downMs = now - this.disconnectedSince;
+      const downSec = Math.floor(downMs / 1000);
+
+      // If we've been down for a long time, try a full fresh reconnect
+      if (downMs > this.FORCE_RECONNECT_THRESHOLD_MS) {
+        console.log(`[Bot] 🔄 WS down for ${downSec}s — forcing full reconnect`);
+        this.logToFile(`Force reconnect after ${downSec}s downtime`);
+
+        try {
+          await this.ws.forceReconnect();
+        } catch (error) {
+          console.error("[Bot] Force reconnect failed:", error);
+          // Will retry on next health check
+        }
+      }
+      return;
+    }
+
+    // Check 2: Stale data detection (connected but no data flowing)
+    const lastData = this.ws.lastDataReceived;
+    if (lastData > 0) {
+      const staleness = now - lastData;
+
+      if (staleness > this.FORCE_RECONNECT_THRESHOLD_MS) {
+        // Very stale — force reconnect
+        console.log(
+          `[Bot] 🔄 No data for ${Math.floor(staleness / 1000)}s — forcing WS reconnect`
+        );
+        this.logToFile(`Force reconnect: no data for ${Math.floor(staleness / 1000)}s`);
+
+        // Cancel orders first (safety)
+        await this.cancelOrdersOnDisconnect();
+
+        try {
+          await this.ws.forceReconnect();
+        } catch (error) {
+          console.error("[Bot] Force reconnect failed:", error);
+        }
+      } else if (staleness > this.STALE_DATA_THRESHOLD_MS) {
+        // Warning level — log but don't act yet
+        console.log(
+          `[Bot] ⚠️ No data for ${Math.floor(staleness / 1000)}s — connection may be stale`
+        );
+      }
+    }
   }
 
   private async onOrderbookSnapshot(data: OrderbookSnapshot): Promise<void> {
@@ -1176,8 +1323,8 @@ export class Bot {
     }
 
     for (const ticker of this.activeMarkets) {
-      // Don't remove static config markets
-      if (!newTickers.has(ticker) && !this.config.markets.includes(ticker)) {
+      // Don't remove static config markets or pinned markets
+      if (!newTickers.has(ticker) && !this.config.markets.includes(ticker) && !this.pinnedMarkets.has(ticker)) {
         // Don't remove if we have an open position
         const pos = this.inventory.getPosition(ticker);
         if (pos && pos.netExposure !== 0) {

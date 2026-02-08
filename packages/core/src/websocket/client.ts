@@ -26,9 +26,10 @@ import { generateWsAuthHeaders } from './auth.js';
 const DEFAULTS = {
   autoReconnect: true,
   reconnectDelay: 1000,
-  maxReconnectAttempts: 10,
-  pingInterval: 30000,  // 30 seconds
-  pongTimeout: 10000,   // 10 seconds
+  maxReconnectAttempts: Infinity,  // Retry forever by default
+  maxReconnectDelay: 60_000,      // Cap backoff at 60 seconds
+  pingInterval: 30000,            // 30 seconds
+  pongTimeout: 10000,             // 10 seconds
 };
 
 /**
@@ -58,12 +59,16 @@ export class KalshiWsClient {
   private commandId = 0;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private pongTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private subscriptions: ActiveSubscriptions = {
     orderbook_delta: new Set(),
     ticker: new Set(),
     trade: new Set(),
     fill: false,
   };
+
+  /** Timestamp of last data message received (ticker, orderbook, fill, trade) */
+  private _lastDataReceived = 0;
 
   constructor(config: KalshiWsConfig) {
     this.config = {
@@ -72,7 +77,13 @@ export class KalshiWsClient {
       autoReconnect: config.autoReconnect ?? DEFAULTS.autoReconnect,
       reconnectDelay: config.reconnectDelay ?? DEFAULTS.reconnectDelay,
       maxReconnectAttempts: config.maxReconnectAttempts ?? DEFAULTS.maxReconnectAttempts,
+      maxReconnectDelay: config.maxReconnectDelay ?? DEFAULTS.maxReconnectDelay,
     };
+  }
+
+  /** Returns the timestamp (ms) of the last data message received */
+  get lastDataReceived(): number {
+    return this._lastDataReceived;
   }
 
   // ===========================================================================
@@ -162,10 +173,43 @@ export class KalshiWsClient {
     this.state = 'disconnected';
     this.stopPingPong();
     
+    // Cancel any pending reconnect
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    
     if (this.ws) {
       this.ws.close(1000, 'Client disconnect');
       this.ws = null;
     }
+  }
+
+  /**
+   * Force a reconnection by tearing down the existing connection and reconnecting.
+   * Useful for recovering from stale/zombie connections.
+   * Resets reconnect attempt counter.
+   */
+  async forceReconnect(): Promise<void> {
+    this.stopPingPong();
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    // Close existing socket without triggering the normal reconnect flow
+    this.state = 'disconnected';
+    if (this.ws) {
+      this.ws.removeAllListeners();
+      this.ws.terminate();
+      this.ws = null;
+    }
+
+    // Reset attempts so backoff starts fresh
+    this.reconnectAttempts = 0;
+
+    // Now connect fresh
+    await this.connect();
   }
 
   /**
@@ -299,22 +343,27 @@ export class KalshiWsClient {
           break;
 
         case 'orderbook_snapshot':
+          this._lastDataReceived = Date.now();
           this.handlers.onOrderbookSnapshot?.(message.msg);
           break;
 
         case 'orderbook_delta':
+          this._lastDataReceived = Date.now();
           this.handlers.onOrderbookDelta?.(message.msg);
           break;
 
         case 'ticker':
+          this._lastDataReceived = Date.now();
           this.handlers.onTicker?.(message.msg);
           break;
 
         case 'trade':
+          this._lastDataReceived = Date.now();
           this.handlers.onTrade?.(message.msg);
           break;
 
         case 'fill':
+          this._lastDataReceived = Date.now();
           this.handlers.onFill?.(message.msg);
           break;
           
@@ -348,10 +397,20 @@ export class KalshiWsClient {
     this.state = 'reconnecting';
     this.reconnectAttempts++;
 
-    // Exponential backoff
-    const delay = this.config.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+    // Exponential backoff with cap and jitter
+    const baseDelay = this.config.reconnectDelay * Math.pow(2, Math.min(this.reconnectAttempts - 1, 10));
+    const cappedDelay = Math.min(baseDelay, this.config.maxReconnectDelay);
+    // Add ±25% jitter to avoid thundering herd
+    const jitter = cappedDelay * (0.75 + Math.random() * 0.5);
+    const delay = Math.round(jitter);
 
-    setTimeout(() => {
+    console.log(
+      `[WS] Reconnecting in ${(delay / 1000).toFixed(1)}s (attempt ${this.reconnectAttempts}` +
+      `${this.config.maxReconnectAttempts === Infinity ? '' : `/${this.config.maxReconnectAttempts}`})`
+    );
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       if (this.state === 'reconnecting') {
         this.connect().catch((error) => {
           this.handlers.onError?.(error);

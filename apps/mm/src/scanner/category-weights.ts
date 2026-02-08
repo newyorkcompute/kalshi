@@ -81,6 +81,8 @@ const CATEGORY_PROFILES: Record<string, CategoryProfile> = {
   "mma": { weight: 0.55, expectedGapPP: 2.23, label: "Sports" },
   "ufc": { weight: 0.55, expectedGapPP: 2.23, label: "Sports" },
   "tennis": { weight: 0.55, expectedGapPP: 2.23, label: "Sports" },
+  "atp": { weight: 0.55, expectedGapPP: 2.23, label: "Sports" },
+  "wta": { weight: 0.55, expectedGapPP: 2.23, label: "Sports" },
   "pga": { weight: 0.55, expectedGapPP: 2.23, label: "Sports" },
   "golf": { weight: 0.55, expectedGapPP: 2.23, label: "Sports" },
   "lpga": { weight: 0.55, expectedGapPP: 2.23, label: "Sports" },
@@ -94,6 +96,19 @@ const CATEGORY_PROFILES: Record<string, CategoryProfile> = {
   "total points": { weight: 0.55, expectedGapPP: 2.23, label: "Sports" },
   "spread": { weight: 0.55, expectedGapPP: 2.23, label: "Sports" },
   "winner": { weight: 0.55, expectedGapPP: 2.23, label: "Sports" },
+
+  // Tier 3b: Esports — lower edge than traditional sports
+  // Less casual bettor participation, more informed bettors, tighter markets
+  "esports": { weight: 0.30, expectedGapPP: 1.0, label: "Esports" },
+  "cs2": { weight: 0.30, expectedGapPP: 1.0, label: "Esports" },
+  "csgo": { weight: 0.30, expectedGapPP: 1.0, label: "Esports" },
+  "valorant": { weight: 0.30, expectedGapPP: 1.0, label: "Esports" },
+  "lol": { weight: 0.30, expectedGapPP: 1.0, label: "Esports" },
+  "dota": { weight: 0.30, expectedGapPP: 1.0, label: "Esports" },
+  "overwatch": { weight: 0.30, expectedGapPP: 1.0, label: "Esports" },
+  "apex": { weight: 0.30, expectedGapPP: 1.0, label: "Esports" },
+  "r6": { weight: 0.30, expectedGapPP: 1.0, label: "Esports" },
+  "rocketleague": { weight: 0.30, expectedGapPP: 1.0, label: "Esports" },
 
   // Tier 4: Low maker edge (partially informed participants)
   "politics": { weight: 0.35, expectedGapPP: 1.02, label: "Politics" },
@@ -149,6 +164,24 @@ const TICKER_PREFIX_MAP: Record<string, CategoryProfile> = {
   "ncaa": CATEGORY_PROFILES["ncaa"],
   "wnba": CATEGORY_PROFILES["wnba"],
   "tennis": CATEGORY_PROFILES["tennis"],
+  "atpchallenger": CATEGORY_PROFILES["atp"],
+  "atpmatch": CATEGORY_PROFILES["atp"],
+  "atp": CATEGORY_PROFILES["atp"],
+  "wta": CATEGORY_PROFILES["wta"],
+
+  // Esports (lower weight — more efficient, less optimism tax)
+  "cs2": CATEGORY_PROFILES["cs2"],
+  "cs2game": CATEGORY_PROFILES["cs2"],
+  "cs2totalmaps": CATEGORY_PROFILES["cs2"],
+  "cs2map": CATEGORY_PROFILES["cs2"],
+  "valorant": CATEGORY_PROFILES["valorant"],
+  "val": CATEGORY_PROFILES["valorant"],
+  "lol": CATEGORY_PROFILES["lol"],
+  "dota": CATEGORY_PROFILES["dota"],
+  "overwatch": CATEGORY_PROFILES["overwatch"],
+  "apex": CATEGORY_PROFILES["apex"],
+  "r6": CATEGORY_PROFILES["r6"],
+  "rocketleague": CATEGORY_PROFILES["rocketleague"],
 
   // Crypto
   "btc": CATEGORY_PROFILES["btc"],
