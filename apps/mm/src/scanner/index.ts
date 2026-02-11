@@ -18,3 +18,10 @@ export {
   AVOID_CATEGORIES,
   type CategoryProfile,
 } from "./category-weights.js";
+
+export {
+  WeatherScanner,
+  formatWeatherScanResults,
+  type WeatherScannerConfig,
+  type WeatherScanResult,
+} from "./weather-scanner.js";

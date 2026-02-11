@@ -91,12 +91,23 @@ const OptimismTaxStrategySchema = z.object({
   expirySpreadMultiplier: z.number().min(1).max(5).default(2.0),
 });
 
+const WeatherInformedStrategySchema = z.object({
+  minEdgeCents: z.number().min(1).max(20).default(3),
+  maxPositionPerMarket: z.number().min(1).max(100).default(15),
+  sizePerEdgeCent: z.number().min(1).max(20).default(2),
+  maxOrderSize: z.number().min(1).max(50).default(10),
+  priceOffset: z.number().min(0).max(10).default(1),
+  // Weather service config
+  refreshIntervalMin: z.number().min(5).max(120).default(30),
+});
+
 const StrategyConfigSchema = z.object({
-  name: z.enum(["symmetric", "adaptive", "avellaneda", "optimism-tax"]).default("symmetric"),
+  name: z.enum(["symmetric", "adaptive", "avellaneda", "optimism-tax", "weather-informed"]).default("symmetric"),
   symmetric: SymmetricStrategySchema.default({}),
   adaptive: AdaptiveStrategySchema.default({}),
   avellaneda: AvellanedaStrategySchema.default({}),
   "optimism-tax": OptimismTaxStrategySchema.default({}),
+  "weather-informed": WeatherInformedStrategySchema.default({}),
 });
 
 const RiskConfigSchema = z.object({
