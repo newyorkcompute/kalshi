@@ -1,0 +1,65 @@
+# Market Maker Config — WEATHER-INFORMED STRATEGY
+# Created: Feb 11, 2026
+# Target: Positive EV trades on Kalshi temperature markets using NWS forecasts
+#
+# How it works:
+# 1. Fetches NWS forecasts for all Kalshi weather cities
+# 2. Computes P(temp > strike) using Gaussian model with calibrated sigma
+# 3. Only trades when model disagrees with market by >= minEdgeCents
+# 4. Hold to settlement (no need to close before expiry)
+
+api:
+  enabled: true
+  port: 3001
+
+kalshi:
+  demo: false   # PRODUCTION — real money
+
+# Scanner finds weather markets automatically
+scanner:
+  enabled: true
+  maxMarkets: 50
+
+strategy:
+  name: weather-informed
+  weather-informed:
+    minEdgeCents: 4           # Only trade when model disagrees by 4+ cents (conservative start)
+    maxPositionPerMarket: 10  # Conservative: 10 contracts max per market
+    sizePerEdgeCent: 1        # 1 contract per cent of edge (conservative)
+    maxOrderSize: 5           # 5 contracts max per order
+    priceOffset: 1            # Place limit 1¢ inside fair value
+    refreshIntervalMin: 30    # Refresh NWS data every 30 min
+
+    # ─── CALIBRATED SIGMA (°F) ───
+    # Market-implied sigma is ~1.1-1.5°F for next-day forecasts.
+    # We use slightly wider values (conservative = fewer but safer trades).
+    # Tighten as we gather calibration data from actual outcomes.
+    highSigma:
+      hours0to6: 1.0          # Same-day: very accurate (was 1.5)
+      hours6to12: 1.2         # (was 2.0)
+      hours12to24: 1.5        # (was 2.5)
+      hours24to48: 2.0        # Next-day: still good (was 3.5)
+      hours48to72: 3.0        # 2-3 day: more uncertainty (was 5.0)
+      hours72plus: 4.5        # 3+ day: wide (was 6.5)
+    lowSigma:
+      hours0to6: 1.2          # Lows are slightly less predictable
+      hours6to12: 1.5
+      hours12to24: 1.8
+      hours24to48: 2.5
+      hours48to72: 3.5
+      hours72plus: 5.0
+
+# No static markets — weather scanner provides them
+markets: []
+
+# Risk limits — CONSERVATIVE for first run
+risk:
+  maxPositionPerMarket: 30    # Hard limit per market
+  maxTotalExposure: 400       # 400 contracts total
+  maxDailyLoss: 3000          # $30 max daily loss (~3% of account)
+  maxOrderSize: 10            # 10 per order max
+  minSpread: 2
+
+daemon:
+  staleOrderMs: 60000         # Cancel stale orders after 60s
+  reconnectDelayMs: 5000

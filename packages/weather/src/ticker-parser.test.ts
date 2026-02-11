@@ -50,8 +50,8 @@ describe("parseWeatherTicker", () => {
       expect(result!.date).toBe("2026-02-12");
       expect(result!.strike).toBe(82.5);
       expect(result!.direction).toBe("range");
-      expect(result!.rangeLow).toBe(82);
-      expect(result!.rangeHigh).toBe(83);
+      expect(result!.rangeLow).toBe(81.5);
+      expect(result!.rangeHigh).toBe(83.5);
     });
 
     it("parses NYC ticker (KXHIGHNY-26FEB11-T43)", () => {
@@ -109,8 +109,8 @@ describe("parseWeatherTicker", () => {
       expect(result!.date).toBe("2026-02-11");
       expect(result!.strike).toBe(47.5);
       expect(result!.direction).toBe("range");
-      expect(result!.rangeLow).toBe(47);
-      expect(result!.rangeHigh).toBe(48);
+      expect(result!.rangeLow).toBe(46.5);
+      expect(result!.rangeHigh).toBe(48.5);
     });
   });
 
@@ -123,8 +123,8 @@ describe("parseWeatherTicker", () => {
       expect(result!.date).toBe("2026-02-11");
       expect(result!.strike).toBe(23.5);
       expect(result!.direction).toBe("range");
-      expect(result!.rangeLow).toBe(23);
-      expect(result!.rangeHigh).toBe(24);
+      expect(result!.rangeLow).toBe(22.5);
+      expect(result!.rangeHigh).toBe(24.5);
     });
 
     it("parses Miami low ticker (KXLOWTMIA-26FEB11-B55.5)", () => {

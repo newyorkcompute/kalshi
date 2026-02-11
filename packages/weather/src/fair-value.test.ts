@@ -73,30 +73,30 @@ describe("computeFairValue", () => {
 
   describe("range direction", () => {
     it("assigns probability for range bucket centered near forecast", () => {
-      // Forecast 82°F, range 82-83°F, sigma 2.5
-      // P(82 <= temp <= 83) ≈ P(-0.0 <= Z <= 0.4) ≈ 15.5%
+      // Forecast 82°F, range B82.5 = "82-83°" = [81.5, 83.5), sigma 2.5
       const parsed = makeParsed({
         ticker: "KXHIGHAUS-26FEB12-B82.5",
         strike: 82.5,
         direction: "range",
-        rangeLow: 82,
-        rangeHigh: 83,
+        rangeLow: 81.5,
+        rangeHigh: 83.5,
       });
       const forecast = makeForecast(82, 65, "2026-02-12");
       const result = computeFairValue(parsed, forecast, 18);
 
-      expect(result.probability).toBeGreaterThan(0.10);
-      expect(result.probability).toBeLessThan(0.25);
+      // With 2-degree bucket and sigma 2.5, should be ~30%
+      expect(result.probability).toBeGreaterThan(0.20);
+      expect(result.probability).toBeLessThan(0.40);
     });
 
     it("assigns low probability for range far from forecast", () => {
-      // Forecast 82°F, range 90-91°F, sigma 2.5
+      // Forecast 82°F, range B90.5 = "90-91°" = [89.5, 91.5), sigma 2.5
       const parsed = makeParsed({
         ticker: "KXHIGHAUS-26FEB12-B90.5",
         strike: 90.5,
         direction: "range",
-        rangeLow: 90,
-        rangeHigh: 91,
+        rangeLow: 89.5,
+        rangeHigh: 91.5,
       });
       const forecast = makeForecast(82, 65, "2026-02-12");
       const result = computeFairValue(parsed, forecast, 18);
@@ -114,8 +114,8 @@ describe("computeFairValue", () => {
         date: "2026-02-11",
         strike: 23.5,
         direction: "range",
-        rangeLow: 23,
-        rangeHigh: 24,
+        rangeLow: 22.5,
+        rangeHigh: 24.5,
       });
       const forecast = makeForecast(40, 25, "2026-02-11");
       const result = computeFairValue(parsed, forecast, 18);

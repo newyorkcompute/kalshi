@@ -151,9 +151,12 @@ function parseStrikePart(
 
   if (prefix === "B") {
     // "B" = bucket/range. The value is the midpoint of a 2-degree bucket.
-    // E.g., B82.5 → 82-83°F, B23.5 → 23-24°F
-    const rangeLow = Math.floor(value);
-    const rangeHigh = Math.ceil(value);
+    // E.g., B82.5 = "82-83°F" → covers integers 82 and 83.
+    // For the continuous Gaussian model, we use [value-1, value+1) to
+    // capture the full 2-degree-wide bucket (NWS reports integer temps).
+    // B82.5 → [81.5, 83.5), B40.5 → [39.5, 41.5)
+    const rangeLow = value - 1;
+    const rangeHigh = value + 1;
     return {
       strike: value,
       direction: "range",

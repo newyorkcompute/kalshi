@@ -341,6 +341,10 @@ export class Bot {
         const weatherConfig = this.config.strategy["weather-informed"];
         this.weatherService = new WeatherService({
           refreshIntervalMin: weatherConfig.refreshIntervalMin,
+          fairValueConfig: {
+            highSigma: weatherConfig.highSigma,
+            lowSigma: weatherConfig.lowSigma,
+          },
         });
         this.weatherScanner = new WeatherScanner(
           this.marketApi!,
