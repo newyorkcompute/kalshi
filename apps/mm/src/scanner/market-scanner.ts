@@ -439,59 +439,105 @@ export class MarketScanner {
   /**
    * Fetch all open markets from Kalshi with pagination.
    */
+  /**
+   * Check if an error is a transient network error worth retrying.
+   */
+  private isTransientError(error: unknown): boolean {
+    if (error instanceof Error) {
+      const msg = error.message || "";
+      const code = (error as NodeJS.ErrnoException).code || "";
+      return (
+        code === "ECONNRESET" ||
+        code === "ETIMEDOUT" ||
+        code === "ENOTFOUND" ||
+        code === "EPIPE" ||
+        code === "EAI_AGAIN" ||
+        msg.includes("ECONNRESET") ||
+        msg.includes("socket hang up") ||
+        msg.includes("network") ||
+        msg.includes("timeout") ||
+        msg.includes("ETIMEDOUT") ||
+        msg.includes("503") ||
+        msg.includes("502") ||
+        msg.includes("429")
+      );
+    }
+    return false;
+  }
+
   private async fetchAllOpenMarkets(): Promise<Market[]> {
     const allMarkets: Market[] = [];
     let cursor: string | undefined;
     const limit = 1000; // Max page size
     const MAX_PAGES = 200; // Safety: cap at 200k markets to avoid infinite loops
+    const MAX_RETRIES = 3; // Retry transient errors up to 3 times per page
     let page = 0;
     const seenCursors = new Set<string>();
 
     do {
-      try {
-        const response = await this.marketApi.getMarkets(
-          limit,
-          cursor,
-          undefined, // eventTicker
-          undefined, // seriesTicker
-          undefined, // minCreatedTs
-          undefined, // maxCreatedTs
-          undefined, // maxCloseTs
-          undefined, // minCloseTs
-          undefined, // minSettledTs
-          undefined, // maxSettledTs
-          GetMarketsStatusEnum.Open, // status - only active markets
-          undefined, // tickers
-        );
+      let retries = 0;
+      let success = false;
 
-        const markets = response.data?.markets ?? [];
-        allMarkets.push(...markets);
-        cursor = response.data?.cursor || undefined;
-        page++;
+      while (retries <= MAX_RETRIES && !success) {
+        try {
+          const response = await this.marketApi.getMarkets(
+            limit,
+            cursor,
+            undefined, // eventTicker
+            undefined, // seriesTicker
+            undefined, // minCreatedTs
+            undefined, // maxCreatedTs
+            undefined, // maxCloseTs
+            undefined, // minCloseTs
+            undefined, // minSettledTs
+            undefined, // maxSettledTs
+            GetMarketsStatusEnum.Open, // status - only active markets
+            undefined, // tickers
+          );
 
-        // Log progress every 10 pages
-        if (page % 10 === 0) {
-          console.log(`[Scanner] ... fetched ${allMarkets.length} markets (page ${page})`);
-        }
+          const markets = response.data?.markets ?? [];
+          allMarkets.push(...markets);
+          cursor = response.data?.cursor || undefined;
+          page++;
+          success = true;
 
-        // Detect cursor loops
-        if (cursor) {
-          if (seenCursors.has(cursor)) {
-            console.warn(`[Scanner] Cursor loop detected at page ${page}, stopping pagination`);
-            break;
+          // Log progress every 10 pages
+          if (page % 10 === 0) {
+            console.log(`[Scanner] ... fetched ${allMarkets.length} markets (page ${page})`);
           }
-          seenCursors.add(cursor);
-          await this.sleep(250);
-        }
 
-        // Safety cap
-        if (page >= MAX_PAGES) {
-          console.warn(`[Scanner] Reached max page limit (${MAX_PAGES}), stopping`);
-          break;
+          // Detect cursor loops
+          if (cursor) {
+            if (seenCursors.has(cursor)) {
+              console.warn(`[Scanner] Cursor loop detected at page ${page}, stopping pagination`);
+              return allMarkets;
+            }
+            seenCursors.add(cursor);
+            await this.sleep(250);
+          }
+
+          // Safety cap
+          if (page >= MAX_PAGES) {
+            console.warn(`[Scanner] Reached max page limit (${MAX_PAGES}), stopping`);
+            return allMarkets;
+          }
+        } catch (error) {
+          if (this.isTransientError(error) && retries < MAX_RETRIES) {
+            retries++;
+            const delay = Math.min(1000 * Math.pow(2, retries), 10000); // 2s, 4s, 8s (max 10s)
+            console.warn(
+              `[Scanner] Transient error on page ${page + 1} (attempt ${retries}/${MAX_RETRIES}), retrying in ${delay}ms...`
+            );
+            await this.sleep(delay);
+          } else {
+            console.error(
+              `[Scanner] Error fetching markets (page ${page + 1}, after ${retries} retries):`,
+              error instanceof Error ? error.message : error
+            );
+            // Return what we have so far rather than losing everything
+            return allMarkets;
+          }
         }
-      } catch (error) {
-        console.error("[Scanner] Error fetching markets:", error);
-        break;
       }
     } while (cursor);
 
