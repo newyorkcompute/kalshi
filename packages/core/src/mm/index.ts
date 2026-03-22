@@ -16,6 +16,10 @@ export type {
   RiskCheckResult,
   Fill,
   PnLSummary,
+  ComplianceConfig,
+  LiquidityCondition,
+  AvailabilityMetrics,
+  AuditRecord,
 } from "./types.js";
 
 // Order Manager

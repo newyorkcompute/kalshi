@@ -1,0 +1,122 @@
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Market Maker Daemon Configuration — FORMAL MM PROGRAM MODE
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+# This config enables Kalshi's 2025 Market Maker Program compliance
+# (CFTC Rule 40.6(a), effective May 3, 2025 – May 3, 2027).
+#
+# Before using this config:
+#   1. Execute a Form Market Maker Agreement with Kalshi
+#   2. Elect Covered Products in Schedule I
+#   3. Review your Liquidity Conditions in Schedule II
+#   4. Ensure you have sufficient capital (10x largest Minimum Size)
+#
+# See: https://help.kalshi.com/markets/market-maker-program
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+api:
+  enabled: true
+  port: 3001
+
+kalshi:
+  demo: false  # Production mode for formal MM
+
+# ─── Strategy ───
+strategy:
+  name: optimism-tax
+  optimism-tax:
+    longShotThreshold: 15
+    nearlyCertainThreshold: 85
+    optimismEdgeCents: 2
+    optimismSizeMultiplier: 2.0
+    maxLongshotExposure: 150
+    edgeCents: 1
+    minSpreadCents: 2
+    sizePerSide: 5
+    maxMarketSpread: 15
+    skewFactor: 0.5
+    maxInventorySkew: 40
+    useMicroprice: true
+    adverseSelectionMultiplier: 2.5
+    volatilityWindow: 10
+    volatilityThresholdCents: 8
+    # Near-expiry: reduced stop-quote for compliance (covered products override this to 60s)
+    expiryWidenStartSec: 3600
+    expiryStopQuoteSec: 300
+    expirySpreadMultiplier: 2.0
+
+# ─── Scanner ───
+scanner:
+  enabled: true
+  maxMarkets: 50
+  rescanIntervalMin: 20
+  minVolume: 100
+  minSpread: 2
+  maxSpread: 15
+  minHoursToExpiry: 1
+  deepScan: false
+
+# Empty - scanner provides markets dynamically
+markets: []
+
+# ─── Risk Limits ───
+risk:
+  maxPositionPerMarket: 25
+  maxTotalExposure: 500
+  maxDailyLoss: 5000    # $50
+  maxOrderSize: 5
+  minSpread: 2
+
+# ─── Daemon ───
+daemon:
+  staleOrderMs: 60000
+  reconnectDelayMs: 5000
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# COMPLIANCE — Formal Market Maker Program
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+# When formalMarketMaker is true, the compliance enforcer wraps
+# strategy output to guarantee two-sided quoting, minimum sizes,
+# maximum spreads, and 98% availability for Covered Products.
+#
+# The enforcer DOES NOT change the strategy itself — it only injects
+# the missing side at minimum-obligation levels when the strategy
+# would otherwise go one-sided or withdraw.
+#
+compliance:
+  formalMarketMaker: true
+
+  # Schedule I: Covered Product Elections
+  # List exact tickers or category prefixes (e.g. "KXBTC" matches all BTC markets)
+  coveredProducts:
+    - KXINX       # S&P 500
+    - KXNASDAQ100 # NASDAQ 100
+    - KXBTC       # Bitcoin
+    - KXETH       # Ethereum
+    - KXFED       # Fed decisions
+    - KXCPI       # CPI
+
+  # Schedule II: Liquidity Conditions
+  liquidityConditions:
+    defaultMaxSpreadCents: 10   # Max bid/offer spread (cents)
+    defaultMinSize: 3           # Min contracts per side
+    availabilityTarget: 0.98    # 98% per 1-hour increment
+
+    # Per-product overrides (keyed by ticker prefix)
+    perProduct:
+      KXBTC:
+        maxSpreadCents: 12      # Crypto is more volatile
+        minSize: 2
+      KXETH:
+        maxSpreadCents: 12
+        minSize: 2
+      KXFED:
+        maxSpreadCents: 8       # Econ markets are tighter
+        minSize: 5
+
+  # Structured JSONL audit trail (compliance-audit-YYYY-MM-DD.jsonl)
+  auditLog: true
+
+  # Prevent self-trading (defense-in-depth for single or multi-account)
+  selfTradeProtection: true
