@@ -158,6 +158,25 @@ const ScannerConfigSchema = z.object({
   deepScan: z.boolean().default(false),
 });
 
+const PerProductConditionSchema = z.object({
+  maxSpreadCents: z.number().min(1).max(50).optional(),
+  minSize: z.number().min(1).max(100).optional(),
+  availabilityTarget: z.number().min(0.5).max(1).optional(),
+});
+
+const ComplianceConfigSchema = z.object({
+  formalMarketMaker: z.boolean().default(false),
+  coveredProducts: z.array(z.string()).default([]),
+  liquidityConditions: z.object({
+    defaultMaxSpreadCents: z.number().min(1).max(50).default(10),
+    defaultMinSize: z.number().min(1).max(100).default(3),
+    availabilityTarget: z.number().min(0.5).max(1).default(0.98),
+    perProduct: z.record(z.string(), PerProductConditionSchema).default({}),
+  }).default({}),
+  auditLog: z.boolean().default(true),
+  selfTradeProtection: z.boolean().default(true),
+});
+
 const ConfigSchema = z.object({
   api: ApiConfigSchema.default({}),
   kalshi: KalshiConfigSchema.default({}),
@@ -166,6 +185,7 @@ const ConfigSchema = z.object({
   scanner: ScannerConfigSchema.default({}),
   risk: RiskConfigSchema.default({}),
   daemon: DaemonConfigSchema.default({}),
+  compliance: ComplianceConfigSchema.default({}),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

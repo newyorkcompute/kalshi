@@ -2,6 +2,8 @@
  * Risk Manager
  *
  * Enforces risk limits for market making.
+ * Supports formal Market Maker 10x position accountability levels (Rule 4.5(a))
+ * and per-contract dynamic position limits from Kalshi's API.
  */
 
 import type {
@@ -21,6 +23,9 @@ export const DEFAULT_RISK_LIMITS: RiskLimits = {
   minSpread: 2,
 };
 
+/** Market Maker accountability level multiplier per Rule 4.5(a) */
+const MM_ACCOUNTABILITY_MULTIPLIER = 10;
+
 /**
  * RiskManager enforces trading limits
  */
@@ -30,8 +35,64 @@ export class RiskManager {
   private halted: boolean = false;
   private haltReason?: string;
 
+  /** Per-contract position limits fetched from Kalshi's API */
+  private contractPositionLimits: Map<string, number> = new Map();
+  private contractLimitCacheMs = 300_000; // 5 min TTL
+  private contractLimitTimestamps: Map<string, number> = new Map();
+
+  /** Tickers with formal MM accountability levels (10x) */
+  private mmCoveredTickers: Set<string> = new Set();
+
   constructor(limits: Partial<RiskLimits> = {}) {
     this.limits = { ...DEFAULT_RISK_LIMITS, ...limits };
+  }
+
+  /**
+   * Register tickers that have formal MM designation (10x position accountability).
+   * These tickers get elevated position limits per Rule 4.5(a).
+   */
+  setMMCoveredTickers(tickers: string[]): void {
+    this.mmCoveredTickers = new Set(tickers);
+  }
+
+  /**
+   * Cache a per-contract position limit fetched from Kalshi's API.
+   * The effective limit is min(config limit, API limit), unless the ticker
+   * has MM accountability which applies the 10x multiplier.
+   */
+  setContractPositionLimit(ticker: string, limit: number): void {
+    this.contractPositionLimits.set(ticker, limit);
+    this.contractLimitTimestamps.set(ticker, Date.now());
+  }
+
+  /** Get the effective per-market position limit for a ticker */
+  private getEffectivePositionLimit(ticker: string): number {
+    let configLimit = this.limits.maxPositionPerMarket;
+
+    // Apply 10x MM accountability multiplier for covered products.
+    // Uses prefix matching to be consistent with ComplianceEnforcer.isCoveredProduct:
+    // "KXBTC" in mmCoveredTickers matches "KXBTC-25MAR21-T50".
+    let isCovered = false;
+    for (const prefix of this.mmCoveredTickers) {
+      if (ticker === prefix || ticker.startsWith(prefix)) {
+        isCovered = true;
+        break;
+      }
+    }
+    if (isCovered) {
+      configLimit *= MM_ACCOUNTABILITY_MULTIPLIER;
+    }
+
+    // Check cached API limit
+    const apiLimit = this.contractPositionLimits.get(ticker);
+    const timestamp = this.contractLimitTimestamps.get(ticker) ?? 0;
+    const isFresh = Date.now() - timestamp < this.contractLimitCacheMs;
+
+    if (apiLimit !== undefined && isFresh) {
+      return Math.min(configLimit, apiLimit);
+    }
+
+    return configLimit;
   }
 
   /**
@@ -66,14 +127,15 @@ export class RiskManager {
       };
     }
 
-    // Check position limits
+    // Check position limits (supports per-contract and MM accountability levels)
     const currentPosition = Math.abs(inventory.getNetExposure(quote.ticker));
     const potentialPosition = currentPosition + Math.max(quote.bidSize, quote.askSize);
+    const effectiveLimit = this.getEffectivePositionLimit(quote.ticker);
     
-    if (potentialPosition > this.limits.maxPositionPerMarket) {
+    if (potentialPosition > effectiveLimit) {
       return {
         allowed: false,
-        reason: `Position ${potentialPosition} would exceed max ${this.limits.maxPositionPerMarket}`,
+        reason: `Position ${potentialPosition} would exceed max ${effectiveLimit} for ${quote.ticker}`,
       };
     }
 
@@ -110,10 +172,11 @@ export class RiskManager {
     }
 
     const currentPosition = Math.abs(inventory.getNetExposure(order.ticker));
-    if (currentPosition + order.count > this.limits.maxPositionPerMarket) {
+    const effectiveLimit = this.getEffectivePositionLimit(order.ticker);
+    if (currentPosition + order.count > effectiveLimit) {
       return {
         allowed: false,
-        reason: `Would exceed position limit for ${order.ticker}`,
+        reason: `Would exceed position limit (${effectiveLimit}) for ${order.ticker}`,
       };
     }
 

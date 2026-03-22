@@ -146,3 +146,69 @@ export interface PnLSummary {
   volumeToday: number;
 }
 
+// ============================================================================
+// Compliance Types (Formal Market Maker Program)
+// ============================================================================
+
+/** Per-product liquidity conditions from Schedule II */
+export interface LiquidityCondition {
+  /** Max bid/offer spread in cents */
+  maxSpreadCents: number;
+  /** Min quote size per side in contracts */
+  minSize: number;
+  /** Required availability as fraction (e.g. 0.98 = 98%) */
+  availabilityTarget: number;
+}
+
+/** Compliance configuration for the formal MM program */
+export interface ComplianceConfig {
+  /** Master toggle for formal Market Maker mode */
+  formalMarketMaker: boolean;
+  /** Schedule I: tickers or category prefixes elected as Covered Products */
+  coveredProducts: string[];
+  /** Default liquidity conditions (can be overridden per product) */
+  liquidityConditions: {
+    defaultMaxSpreadCents: number;
+    defaultMinSize: number;
+    availabilityTarget: number;
+    /** Per-product/category overrides keyed by ticker prefix */
+    perProduct: Record<string, Partial<LiquidityCondition>>;
+  };
+  /** Enable structured compliance audit logging */
+  auditLog: boolean;
+  /** Enable self-trade prevention checks */
+  selfTradeProtection: boolean;
+}
+
+/** Rolling availability metrics for a single product */
+export interface AvailabilityMetrics {
+  /** Product ticker or category */
+  product: string;
+  /** Start of the current 1-hour window */
+  windowStart: number;
+  /** Total ms with live two-sided quotes in window */
+  quotingMs: number;
+  /** Total ms elapsed in window */
+  elapsedMs: number;
+  /** Current availability fraction */
+  availability: number;
+  /** Whether currently quoting (two-sided) */
+  isQuoting: boolean;
+}
+
+/** Audit log record for compliance trail */
+export interface AuditRecord {
+  timestamp: string;
+  type:
+    | "quote_decision"
+    | "compliance_adjustment"
+    | "order_placed"
+    | "order_cancelled"
+    | "fill"
+    | "availability_snapshot"
+    | "config_change"
+    | "self_trade_prevented";
+  ticker?: string;
+  details: Record<string, unknown>;
+}
+

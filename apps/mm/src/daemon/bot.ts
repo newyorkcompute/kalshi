@@ -73,6 +73,7 @@ import { MarketScanner, formatScanResults, type ScanResult, type ScannerConfig }
 import { WeatherService } from "../weather/weather-service.js";
 import { WeatherScanner, formatWeatherScanResults, type WeatherScanResult } from "../scanner/weather-scanner.js";
 import { isWeatherTicker } from "@newyorkcompute/kalshi-weather";
+import { ComplianceEnforcer, AvailabilityTracker, AuditLogger, SelfTradeGuard } from "../compliance/index.js";
 
 export interface BotState {
   running: boolean;
@@ -99,6 +100,11 @@ export interface BotState {
     enabled: boolean;
     lastScan: Date | null;
     marketsFound: number;
+  };
+  compliance?: {
+    formalMarketMaker: boolean;
+    coveredProducts: string[];
+    availability: Array<{ product: string; availability: number; isQuoting: boolean }>;
   };
 }
 
@@ -130,6 +136,12 @@ export class Bot {
   // Advanced risk controls
   private drawdownManager: DrawdownManager;
   private circuitBreaker: CircuitBreaker;
+
+  // Compliance (formal Market Maker Program)
+  private complianceEnforcer: ComplianceEnforcer | null = null;
+  private availabilityTracker: AvailabilityTracker | null = null;
+  private auditLogger: AuditLogger | null = null;
+  private selfTradeGuard: SelfTradeGuard | null = null;
 
   // Scanner for dynamic market selection
   private scanner: MarketScanner | null = null;
@@ -226,6 +238,26 @@ export class Bot {
     // Initialize advanced risk controls with config (or defaults)
     this.drawdownManager = new DrawdownManager();
     this.circuitBreaker = new CircuitBreaker();
+
+    // Initialize compliance module (formal Market Maker Program)
+    if (config.compliance?.formalMarketMaker) {
+      const logsDir = join(process.cwd(), "logs");
+      this.auditLogger = new AuditLogger(logsDir, config.compliance.auditLog);
+      this.availabilityTracker = new AvailabilityTracker(
+        config.compliance.liquidityConditions?.availabilityTarget ?? 0.98,
+      );
+      this.complianceEnforcer = new ComplianceEnforcer(
+        config.compliance,
+        this.availabilityTracker,
+        this.auditLogger,
+      );
+      this.selfTradeGuard = new SelfTradeGuard(
+        config.compliance.selfTradeProtection,
+        this.auditLogger,
+      );
+      this.risk.setMMCoveredTickers(config.compliance.coveredProducts);
+      log("Bot", `Compliance: FORMAL MM MODE enabled (${config.compliance.coveredProducts.length} covered products)`);
+    }
 
     // Initialize active markets from config
     for (const m of config.markets) {
@@ -498,6 +530,9 @@ export class Bot {
       this.ws.disconnect();
     }
 
+    // Flush compliance audit log
+    this.auditLogger?.close();
+
     // ─── Structured session end ───
     const pnl = this.inventory.getPnLSummary();
     const durationMs = Date.now() - this.sessionStartTime;
@@ -589,6 +624,15 @@ export class Bot {
         enabled: true,
         lastScan: this.lastScanResult?.timestamp ?? null,
         marketsFound: this.lastScanResult?.markets.length ?? 0,
+      } : undefined,
+      compliance: this.complianceEnforcer ? {
+        formalMarketMaker: true,
+        coveredProducts: this.config.compliance.coveredProducts,
+        availability: this.availabilityTracker?.getAllMetrics().map(m => ({
+          product: m.product,
+          availability: m.availability,
+          isQuoting: m.isQuoting,
+        })) ?? [],
       } : undefined,
     };
   }
@@ -1190,6 +1234,9 @@ export class Bot {
     // Log to file
     this.logFillToFile(data, realizedFromFill, pnlAfter.realizedToday);
 
+    // Compliance audit log
+    this.auditLogger?.logFill(ticker, data.side, data.action, price, data.count, realizedFromFill);
+
     // Track per-market P&L
     const mktPnl = this.marketPnL.get(ticker) ?? { realized: 0, fills: 0, addedAt: Date.now() };
     mktPnl.realized += realizedFromFill;
@@ -1287,18 +1334,33 @@ export class Bot {
     };
 
     // Get quotes from strategy
-    const quotes = this.strategy.computeQuotes(snapshot);
+    let quotes = this.strategy.computeQuotes(snapshot);
+
+    // Apply compliance enforcement for formal MM covered products.
+    // This may inject missing sides, enforce min sizes, or generate
+    // obligation quotes when the strategy returns empty.
+    if (this.complianceEnforcer) {
+      this.auditLogger?.logQuoteDecision(
+        ticker,
+        quotes.map(q => ({ bidPrice: q.bidPrice, askPrice: q.askPrice, bidSize: q.bidSize, askSize: q.askSize })),
+        this.complianceEnforcer.isCoveredProduct(ticker),
+      );
+      quotes = this.complianceEnforcer.enforce(quotes, snapshot);
+    }
 
     // If strategy returns no quotes, cancel any resting orders for this ticker.
-    // This prevents stale orders from remaining active in unsafe regimes
-    // (e.g. volatile mid-range or non-quotable markets).
+    // For covered products under compliance, check availability first.
     if (quotes.length === 0) {
+      if (this.availabilityTracker) {
+        this.availabilityTracker.markNotQuoting(ticker);
+      }
       if (this.orderManager) {
         try {
           const cancelled = await this.orderManager.cancelAll(ticker);
           if (cancelled > 0) {
             log("Bot", `🧹 Cancelled ${cancelled} orders (no-quote) for ${ticker}`);
             this.logToFile(`No-quote cancel: ${cancelled} orders for ${ticker}`);
+            this.auditLogger?.logOrderCancelled(ticker, "no_quote_from_strategy", cancelled);
           }
           // Invalidate quote cache so we re-quote fresh later
           this.lastSentQuote.delete(ticker);
@@ -1311,9 +1373,11 @@ export class Bot {
 
     // Apply drawdown position scaling
     const positionMultiplier = this.drawdownManager.getPositionMultiplier();
+    const isCoveredProduct = this.complianceEnforcer?.isCoveredProduct(ticker) ?? false;
 
     // If drawdown multiplier is 0, cancel any resting orders for this ticker.
-    if (positionMultiplier === 0) {
+    // For covered products, fall through at minSize to preserve 98% availability.
+    if (positionMultiplier === 0 && !isCoveredProduct) {
       if (this.orderManager) {
         try {
           const cancelled = await this.orderManager.cancelAll(ticker);
@@ -1331,13 +1395,17 @@ export class Bot {
 
     // Place quotes (risk check happens inside updateQuote)
     const maxOrderSize = this.config.risk.maxOrderSize;
+    const complianceMinSize = isCoveredProduct
+      ? this.complianceEnforcer!.getConditions(ticker).minSize
+      : 0;
     for (const quote of quotes) {
-      // Apply drawdown scaling to sizes, then clamp to maxOrderSize
-      // IMPORTANT: Preserve 0 sizes from strategy (skip risky side protection)
+      // Apply drawdown scaling to sizes, then clamp to maxOrderSize.
+      // For covered products, never go below the compliance minSize to
+      // preserve the formal MM obligation (two-sided quoting at min depth).
       const scaledQuote = {
         ...quote,
-        bidSize: quote.bidSize === 0 ? 0 : Math.min(maxOrderSize, Math.max(1, Math.floor(quote.bidSize * positionMultiplier))),
-        askSize: quote.askSize === 0 ? 0 : Math.min(maxOrderSize, Math.max(1, Math.floor(quote.askSize * positionMultiplier))),
+        bidSize: quote.bidSize === 0 ? 0 : Math.max(complianceMinSize, Math.min(maxOrderSize, Math.max(1, Math.floor(quote.bidSize * positionMultiplier)))),
+        askSize: quote.askSize === 0 ? 0 : Math.max(complianceMinSize, Math.min(maxOrderSize, Math.max(1, Math.floor(quote.askSize * positionMultiplier)))),
       };
       
       // QUOTE CACHING: Skip API call if quote is identical to last sent
@@ -1349,6 +1417,21 @@ export class Bot {
           lastQuote.askSize === scaledQuote.askSize) {
         // Quote unchanged - skip API call entirely
         continue;
+      }
+
+      // ─── SELF-TRADE GUARD ───
+      if (this.selfTradeGuard && this.orderManager) {
+        const restingOrders = this.orderManager.getActive(scaledQuote.ticker);
+        const stResult = this.selfTradeGuard.checkQuote(scaledQuote, restingOrders);
+        if (stResult.cancelOrderIds.length > 0) {
+          for (const orderId of stResult.cancelOrderIds) {
+            try {
+              await this.orderManager.cancel(orderId);
+            } catch {
+              // Resting order may already be gone
+            }
+          }
+        }
       }
 
       const check = this.risk.checkQuote(scaledQuote, this.inventory);
@@ -1395,9 +1478,15 @@ export class Bot {
           askSize: scaledQuote.askSize,
         });
         
+        // Track availability for compliance (two-sided quote is live)
+        if (this.availabilityTracker && scaledQuote.bidSize > 0 && scaledQuote.askSize > 0) {
+          this.availabilityTracker.markQuoting(scaledQuote.ticker);
+        }
+        
         const adverseTag = adverseSelection ? " [ADVERSE]" : "";
         const scaleTag = positionMultiplier < 1.0 ? ` [${Math.round(positionMultiplier * 100)}%]` : "";
-        log("Bot", `📝 Quote: ${scaledQuote.ticker} ${scaledQuote.bidSize}x@${scaledQuote.bidPrice}¢ / ${scaledQuote.askSize}x@${scaledQuote.askPrice}¢${adverseTag}${scaleTag}`);
+        const complianceTag = this.complianceEnforcer?.isCoveredProduct(scaledQuote.ticker) ? " [MM]" : "";
+        log("Bot", `📝 Quote: ${scaledQuote.ticker} ${scaledQuote.bidSize}x@${scaledQuote.bidPrice}¢ / ${scaledQuote.askSize}x@${scaledQuote.askPrice}¢${adverseTag}${scaleTag}${complianceTag}`);
       } catch (error) {
         console.error(`[Bot] ❌ Quote failed for ${ticker}:`, error);
       }
