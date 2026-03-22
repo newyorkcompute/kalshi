@@ -35,6 +35,8 @@ export interface WeatherInformedParams {
   maxOrderSize: number;
   /** Price offset from fair value (cents) to place limit orders (default 1) */
   priceOffset: number;
+  /** Skip range bucket markets entirely — they have asymmetric loss profile (default false) */
+  skipRangeBuckets: boolean;
 }
 
 const DEFAULT_PARAMS: WeatherInformedParams = {
@@ -43,6 +45,7 @@ const DEFAULT_PARAMS: WeatherInformedParams = {
   sizePerEdgeCent: 2,
   maxOrderSize: 10,
   priceOffset: 1,
+  skipRangeBuckets: false,
 };
 
 export class WeatherInformedStrategy extends BaseStrategy {
@@ -56,6 +59,15 @@ export class WeatherInformedStrategy extends BaseStrategy {
 
   computeQuotes(snapshot: MarketSnapshot): Quote[] {
     const { ticker, bestBid, bestAsk, position, modelFairValue } = snapshot;
+
+    // Skip range bucket markets (B-prefix in strike part) if configured
+    // Ticker format: KXHIGH{CITY}-{DATE}-{T|B}{STRIKE}
+    if (this.params.skipRangeBuckets) {
+      const parts = ticker.split("-");
+      if (parts.length === 3 && parts[2]?.startsWith("B")) {
+        return [];
+      }
+    }
 
     // No model fair value → can't trade this market
     if (modelFairValue === undefined || modelFairValue === null) {

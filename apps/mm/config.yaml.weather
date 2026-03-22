@@ -1,12 +1,14 @@
-# Market Maker Config — WEATHER-INFORMED STRATEGY
-# Created: Feb 11, 2026
-# Target: Positive EV trades on Kalshi temperature markets using NWS forecasts
+# Market Maker Config — WEATHER THRESHOLD ONLY
+# Updated: Feb 13, 2026
+# Lesson learned: range buckets bleed money, sports/politics have no edge.
+# Now: ONLY weather threshold (above/below) trades with high-confidence edge.
 #
 # How it works:
 # 1. Fetches NWS forecasts for all Kalshi weather cities
 # 2. Computes P(temp > strike) using Gaussian model with calibrated sigma
-# 3. Only trades when model disagrees with market by >= minEdgeCents
-# 4. Hold to settlement (no need to close before expiry)
+# 3. Only trades THRESHOLD markets (T-prefix), skips range buckets (B-prefix)
+# 4. Only trades when model disagrees with market by >= 7 cents
+# 5. Hold to settlement (no need to close before expiry)
 
 api:
   enabled: true
@@ -15,49 +17,47 @@ api:
 kalshi:
   demo: false   # PRODUCTION — real money
 
-# Scanner finds weather markets automatically
+# DISABLED general scanner — no edge on sports/politics/crypto
 scanner:
-  enabled: true
-  maxMarkets: 50
+  enabled: false
 
 strategy:
   name: weather-informed
   weather-informed:
-    minEdgeCents: 4           # Only trade when model disagrees by 4+ cents (conservative start)
-    maxPositionPerMarket: 10  # Conservative: 10 contracts max per market
-    sizePerEdgeCent: 1        # 1 contract per cent of edge (conservative)
+    minEdgeCents: 7           # Only trade with 7+ cents of edge (high confidence)
+    maxPositionPerMarket: 10  # 10 contracts max per market
+    sizePerEdgeCent: 1        # 1 contract per cent of edge
     maxOrderSize: 5           # 5 contracts max per order
-    priceOffset: 1            # Place limit 1¢ inside fair value
+    priceOffset: 2            # Place limit 2¢ inside fair value (more margin of safety)
     refreshIntervalMin: 30    # Refresh NWS data every 30 min
+    skipRangeBuckets: true    # SKIP B-prefix range bucket markets entirely
 
     # ─── CALIBRATED SIGMA (°F) ───
-    # Market-implied sigma is ~1.1-1.5°F for next-day forecasts.
-    # We use slightly wider values (conservative = fewer but safer trades).
-    # Tighten as we gather calibration data from actual outcomes.
+    # Slightly wider than before — be conservative, fewer but safer trades
     highSigma:
-      hours0to6: 1.0          # Same-day: very accurate (was 1.5)
-      hours6to12: 1.2         # (was 2.0)
-      hours12to24: 1.5        # (was 2.5)
-      hours24to48: 2.0        # Next-day: still good (was 3.5)
-      hours48to72: 3.0        # 2-3 day: more uncertainty (was 5.0)
-      hours72plus: 4.5        # 3+ day: wide (was 6.5)
-    lowSigma:
-      hours0to6: 1.2          # Lows are slightly less predictable
+      hours0to6: 1.2          # Same-day: very accurate
       hours6to12: 1.5
-      hours12to24: 1.8
-      hours24to48: 2.5
+      hours12to24: 2.0
+      hours24to48: 2.5        # Next-day: slightly wider for safety
       hours48to72: 3.5
-      hours72plus: 5.0
+      hours72plus: 5.0        # 3+ day: don't trust the model much
+    lowSigma:
+      hours0to6: 1.5          # Lows are less predictable
+      hours6to12: 1.8
+      hours12to24: 2.2
+      hours24to48: 3.0
+      hours48to72: 4.0
+      hours72plus: 5.5
 
 # No static markets — weather scanner provides them
 markets: []
 
-# Risk limits — CONSERVATIVE for first run
+# Risk limits — TIGHT
 risk:
-  maxPositionPerMarket: 30    # Hard limit per market
-  maxTotalExposure: 400       # 400 contracts total
-  maxDailyLoss: 3000          # $30 max daily loss (~3% of account)
-  maxOrderSize: 10            # 10 per order max
+  maxPositionPerMarket: 20    # Hard limit per market
+  maxTotalExposure: 200       # 200 contracts total (halved from 400)
+  maxDailyLoss: 2000          # $20 max daily loss
+  maxOrderSize: 5             # 5 per order max
   minSpread: 2
 
 daemon:

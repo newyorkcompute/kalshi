@@ -352,6 +352,7 @@ export class Bot {
           {
             minEdgeCents: weatherConfig.minEdgeCents,
             maxMarkets: this.config.scanner?.maxMarkets ?? 50,
+            skipRangeBuckets: weatherConfig.skipRangeBuckets ?? false,
           },
         );
 

@@ -106,6 +106,8 @@ const WeatherInformedStrategySchema = z.object({
   sizePerEdgeCent: z.number().min(1).max(20).default(2),
   maxOrderSize: z.number().min(1).max(50).default(10),
   priceOffset: z.number().min(0).max(10).default(1),
+  // Skip range bucket (B-prefix) markets entirely — they have asymmetric loss profile
+  skipRangeBuckets: z.boolean().default(false),
   // Weather service config
   refreshIntervalMin: z.number().min(5).max(120).default(30),
   // Sigma overrides for calibration (°F)

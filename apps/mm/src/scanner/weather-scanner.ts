@@ -30,12 +30,15 @@ export interface WeatherScannerConfig {
   maxMarkets: number;
   /** Rescan interval in minutes (default 10) */
   rescanIntervalMin: number;
+  /** Skip range bucket (B-prefix) markets entirely (default false) */
+  skipRangeBuckets: boolean;
 }
 
 const DEFAULT_CONFIG: WeatherScannerConfig = {
   minEdgeCents: 3,
   maxMarkets: 50,
   rescanIntervalMin: 10,
+  skipRangeBuckets: false,
 };
 
 export interface WeatherScanResult {
@@ -92,6 +95,7 @@ export class WeatherScanner {
     // Step 3: Compute edge for each market
     const opportunities: EdgeOpportunity[] = [];
     let marketsWithFairValue = 0;
+    let skippedRangeBuckets = 0;
 
     for (const market of weatherMarkets) {
       const ticker = market.ticker;
@@ -99,6 +103,12 @@ export class WeatherScanner {
 
       const parsed = parseWeatherTicker(ticker, market.strike_type ?? undefined);
       if (!parsed) continue;
+
+      // Skip range bucket markets if configured (B-prefix = "range" direction)
+      if (this.config.skipRangeBuckets && parsed.direction === "range") {
+        skippedRangeBuckets++;
+        continue;
+      }
 
       const fairValue = this.weatherService.getFairValue(ticker);
       if (!fairValue) continue;
@@ -146,9 +156,10 @@ export class WeatherScanner {
 
     this.lastResult = result;
 
+    const skipMsg = skippedRangeBuckets > 0 ? `, ${skippedRangeBuckets} range buckets skipped` : "";
     console.log(
       `[WeatherScanner] Result: ${limited.length} markets with edge ≥ ${this.config.minEdgeCents}¢ ` +
-      `(${marketsWithFairValue} with fair values, ${weatherMarkets.length} total)`
+      `(${marketsWithFairValue} with fair values, ${weatherMarkets.length} total${skipMsg})`
     );
 
     // Log top opportunities
