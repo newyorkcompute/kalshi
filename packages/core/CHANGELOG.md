@@ -1,5 +1,18 @@
 # @newyorkcompute/kalshi-core
 
+## 0.6.3
+
+### Patch Changes
+
+- [#94](https://github.com/newyorkcompute/kalshi/pull/94) [`310a93c`](https://github.com/newyorkcompute/kalshi/commit/310a93c7b33d4ef0d9fbbe94d04154c16343f4af) Thanks [@siddharthkul](https://github.com/siddharthkul)! - Robust WebSocket auto-reconnection with unlimited retries, capped exponential backoff, and stale connection detection
+
+  - Change `maxReconnectAttempts` default to `Infinity` for unlimited retries
+  - Add `maxReconnectDelay` config option (default 60s) to cap exponential backoff
+  - Add jitter (±25%) to reconnect delay to avoid thundering herd
+  - Track `lastDataReceived` timestamp on all data messages for stale detection
+  - Add `forceReconnect()` method for forced connection reset
+  - Clear pending reconnect timers on `disconnect()`
+
 ## 0.6.2
 
 ### Patch Changes
