@@ -1,5 +1,4 @@
 ---
-"@newyorkcompute/kalshi-mm": minor
 "@newyorkcompute/kalshi-core": minor
 ---
 
