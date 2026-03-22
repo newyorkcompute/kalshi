@@ -70,6 +70,9 @@ import { createStrategy, type Strategy, type MarketSnapshot } from "../strategie
 import { AdverseSelectionDetector, type FillRecord } from "../adverse-selection.js";
 import { DrawdownManager, CircuitBreaker } from "../risk-controls.js";
 import { MarketScanner, formatScanResults, type ScanResult, type ScannerConfig } from "../scanner/index.js";
+import { WeatherService } from "../weather/weather-service.js";
+import { WeatherScanner, formatWeatherScanResults, type WeatherScanResult } from "../scanner/weather-scanner.js";
+import { isWeatherTicker } from "@newyorkcompute/kalshi-weather";
 
 export interface BotState {
   running: boolean;
@@ -132,6 +135,11 @@ export class Bot {
   private scanner: MarketScanner | null = null;
   private scannerEnabled: boolean = false;
   private lastScanResult: ScanResult | null = null;
+
+  // Weather-informed strategy components
+  private weatherService: WeatherService | null = null;
+  private weatherScanner: WeatherScanner | null = null;
+  private isWeatherStrategy: boolean = false;
 
   // Dynamic market list (scanner can modify this)
   private activeMarkets: Set<string> = new Set();
@@ -226,6 +234,9 @@ export class Bot {
 
     // Check if scanner is enabled
     this.scannerEnabled = config.scanner?.enabled ?? false;
+
+    // Detect weather-informed strategy
+    this.isWeatherStrategy = config.strategy.name === "weather-informed";
 
     log("Bot", `Strategy: ${this.strategy.name}`);
     log("Bot", `Mode: ${config.kalshi.demo ? "DEMO" : "PRODUCTION"}`);
@@ -324,6 +335,47 @@ export class Bot {
         }
       }
 
+      // === WEATHER: Initialize weather system if using weather-informed strategy ===
+      if (this.isWeatherStrategy) {
+        log("Bot", "Initializing weather-informed system...");
+        const weatherConfig = this.config.strategy["weather-informed"];
+        this.weatherService = new WeatherService({
+          refreshIntervalMin: weatherConfig.refreshIntervalMin,
+          fairValueConfig: {
+            highSigma: weatherConfig.highSigma,
+            lowSigma: weatherConfig.lowSigma,
+          },
+        });
+        this.weatherScanner = new WeatherScanner(
+          this.marketApi!,
+          this.weatherService,
+          {
+            minEdgeCents: weatherConfig.minEdgeCents,
+            maxMarkets: this.config.scanner?.maxMarkets ?? 50,
+            skipRangeBuckets: weatherConfig.skipRangeBuckets ?? false,
+          },
+        );
+
+        // Run initial weather scan
+        try {
+          const weatherResult = await this.weatherScanner.scan();
+          console.log(formatWeatherScanResults(weatherResult));
+
+          // Add discovered weather markets
+          for (const opp of weatherResult.opportunities) {
+            this.activeMarkets.add(opp.ticker);
+          }
+          log("Bot", `Weather scanner added ${weatherResult.marketsWithEdge} markets (total: ${this.activeMarkets.size})`);
+
+          // Initialize weather service with all weather tickers
+          const weatherTickers = Array.from(this.activeMarkets).filter(isWeatherTicker);
+          await this.weatherService.initialize(weatherTickers);
+        } catch (error) {
+          console.error("[Bot] Weather system initialization failed:", error);
+          this.logToFile(`Weather init failed: ${error}`);
+        }
+      }
+
       // Validate we have markets to trade
       if (this.activeMarkets.size === 0) {
         throw new Error(
@@ -368,6 +420,13 @@ export class Bot {
       if (this.scannerEnabled && this.scanner) {
         this.scanner.startPeriodicScan(async (result) => {
           await this.onScanComplete(result);
+        });
+      }
+
+      // Start periodic weather scanner if weather strategy
+      if (this.isWeatherStrategy && this.weatherScanner) {
+        this.weatherScanner.startPeriodicScan(async (result) => {
+          await this.onWeatherScanComplete(result);
         });
       }
 
@@ -418,6 +477,14 @@ export class Bot {
     // Stop scanner
     if (this.scanner) {
       this.scanner.stopPeriodicScan();
+    }
+
+    // Stop weather components
+    if (this.weatherScanner) {
+      this.weatherScanner.stopPeriodicScan();
+    }
+    if (this.weatherService) {
+      this.weatherService.stop();
     }
 
     // Cancel all orders
@@ -1197,6 +1264,9 @@ export class Bot {
     // === P0: POPULATE timeToExpiry ===
     const timeToExpiry = this.getTimeToExpiry(ticker);
 
+    // Get model fair value for weather-informed strategy
+    const modelFairValue = this.weatherService?.getFairPriceCents(ticker) ?? undefined;
+
     const snapshot: MarketSnapshot = {
       ticker,
       bestBid: data.bestBid,
@@ -1212,6 +1282,8 @@ export class Bot {
       adverseSelection,
       // P0: Time to expiry for strategy decisions
       timeToExpiry,
+      // Weather-informed strategy: model fair value
+      modelFairValue,
     };
 
     // Get quotes from strategy
@@ -1395,6 +1467,39 @@ export class Bot {
     if (toAdd.length > 0 || toRemove.length > 0) {
       log("Bot", `Scanner update: +${toAdd.length} -${toRemove.length} markets (total: ${this.activeMarkets.size})`);
       this.logToFile(`Scanner update: +${toAdd.length} -${toRemove.length} (total: ${this.activeMarkets.size})`);
+    }
+  }
+
+  /**
+   * Handle weather scan completion - update active weather markets.
+   */
+  private async onWeatherScanComplete(result: WeatherScanResult): Promise<void> {
+    console.log(formatWeatherScanResults(result));
+
+    const newTickers = new Set(result.opportunities.map(o => o.ticker));
+
+    // Add new weather markets
+    for (const ticker of newTickers) {
+      if (!this.activeMarkets.has(ticker)) {
+        await this.addMarket(ticker);
+      }
+    }
+
+    // Remove weather markets that no longer have edge (but keep non-weather markets)
+    for (const ticker of Array.from(this.activeMarkets)) {
+      if (isWeatherTicker(ticker) && !newTickers.has(ticker) && !this.pinnedMarkets.has(ticker)) {
+        // Don't remove if we have an open position
+        const pos = this.inventory.getPosition(ticker);
+        if (pos && pos.netExposure !== 0) continue;
+        await this.removeMarket(ticker);
+      }
+    }
+
+    // Update weather service with new tickers
+    if (this.weatherService) {
+      for (const ticker of newTickers) {
+        await this.weatherService.addTicker(ticker);
+      }
     }
   }
 

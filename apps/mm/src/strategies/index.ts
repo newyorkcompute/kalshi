@@ -9,12 +9,14 @@ export { SymmetricStrategy, type SymmetricParams } from "./symmetric.js";
 export { AdaptiveStrategy, type AdaptiveParams } from "./adaptive.js";
 export { AvellanedaStoikovStrategy, type AvellanedaStoikovParams } from "./avellaneda.js";
 export { OptimismTaxStrategy, type OptimismTaxParams } from "./optimism-tax.js";
+export { WeatherInformedStrategy, type WeatherInformedParams } from "./weather-informed.js";
 
 import type { Strategy } from "./base.js";
 import { SymmetricStrategy } from "./symmetric.js";
 import { AdaptiveStrategy } from "./adaptive.js";
 import { AvellanedaStoikovStrategy } from "./avellaneda.js";
 import { OptimismTaxStrategy } from "./optimism-tax.js";
+import { WeatherInformedStrategy } from "./weather-informed.js";
 import type { StrategyConfig } from "../config.js";
 
 /**
@@ -33,6 +35,9 @@ export function createStrategy(config: StrategyConfig): Strategy {
 
     case "optimism-tax":
       return new OptimismTaxStrategy(config["optimism-tax"]);
+
+    case "weather-informed":
+      return new WeatherInformedStrategy(config["weather-informed"]);
 
     default:
       throw new Error(`Unknown strategy: ${config.name}`);

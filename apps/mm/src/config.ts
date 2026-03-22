@@ -91,12 +91,37 @@ const OptimismTaxStrategySchema = z.object({
   expirySpreadMultiplier: z.number().min(1).max(5).default(2.0),
 });
 
+const SigmaOverridesSchema = z.object({
+  hours0to6: z.number().min(0.5).max(10).optional(),
+  hours6to12: z.number().min(0.5).max(10).optional(),
+  hours12to24: z.number().min(0.5).max(10).optional(),
+  hours24to48: z.number().min(0.5).max(10).optional(),
+  hours48to72: z.number().min(0.5).max(10).optional(),
+  hours72plus: z.number().min(0.5).max(10).optional(),
+}).default({});
+
+const WeatherInformedStrategySchema = z.object({
+  minEdgeCents: z.number().min(1).max(20).default(3),
+  maxPositionPerMarket: z.number().min(1).max(100).default(15),
+  sizePerEdgeCent: z.number().min(1).max(20).default(2),
+  maxOrderSize: z.number().min(1).max(50).default(10),
+  priceOffset: z.number().min(0).max(10).default(1),
+  // Skip range bucket (B-prefix) markets entirely — they have asymmetric loss profile
+  skipRangeBuckets: z.boolean().default(false),
+  // Weather service config
+  refreshIntervalMin: z.number().min(5).max(120).default(30),
+  // Sigma overrides for calibration (°F)
+  highSigma: SigmaOverridesSchema,
+  lowSigma: SigmaOverridesSchema,
+});
+
 const StrategyConfigSchema = z.object({
-  name: z.enum(["symmetric", "adaptive", "avellaneda", "optimism-tax"]).default("symmetric"),
+  name: z.enum(["symmetric", "adaptive", "avellaneda", "optimism-tax", "weather-informed"]).default("symmetric"),
   symmetric: SymmetricStrategySchema.default({}),
   adaptive: AdaptiveStrategySchema.default({}),
   avellaneda: AvellanedaStrategySchema.default({}),
   "optimism-tax": OptimismTaxStrategySchema.default({}),
+  "weather-informed": WeatherInformedStrategySchema.default({}),
 });
 
 const RiskConfigSchema = z.object({

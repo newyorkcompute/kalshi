@@ -1,0 +1,54 @@
+{
+  "name": "@newyorkcompute/kalshi-weather",
+  "version": "0.1.0",
+  "description": "Weather intelligence for Kalshi prediction markets — NWS forecast integration, probability model, and fair value calculation",
+  "author": "NewYorkCompute",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/newyorkcompute/kalshi",
+    "directory": "packages/weather"
+  },
+  "keywords": [
+    "kalshi",
+    "weather",
+    "prediction-markets",
+    "nws",
+    "forecast",
+    "temperature"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@eslint/js": "^9.28.0",
+    "@types/node": "^22.15.29",
+    "@vitest/coverage-v8": "^3.2.4",
+    "eslint": "^9.28.0",
+    "typescript-eslint": "^8.33.1",
+    "vitest": "^3.2.3"
+  }
+}

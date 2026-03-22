@@ -37,6 +37,11 @@ export interface MarketSnapshot {
   imbalance?: number;
   /** Is there adverse selection detected for this market? */
   adverseSelection?: boolean;
+
+  // === Weather-informed strategy data ===
+
+  /** Model fair value in cents (from weather forecast model or other external source) */
+  modelFairValue?: number;
 }
 
 /**
