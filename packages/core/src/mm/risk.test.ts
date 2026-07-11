@@ -64,7 +64,49 @@ describe("RiskManager", () => {
       expect(result.reason).toContain("halted");
     });
 
-    it("should reject quote with spread below minimum", () => {
+    it("should allow buy-only quote past spread check", () => {
+      const quote: Quote = {
+        ticker: "TEST-MARKET",
+        side: "yes",
+        bidPrice: 45,
+        bidSize: 10,
+        askPrice: 0,
+        askSize: 0,
+      };
+
+      const result = risk.checkQuote(quote, inventory);
+      expect(result.allowed).toBe(true);
+    });
+
+    it("should allow sell-only quote past spread check", () => {
+      const quote: Quote = {
+        ticker: "TEST-MARKET",
+        side: "yes",
+        bidPrice: 0,
+        bidSize: 0,
+        askPrice: 55,
+        askSize: 10,
+      };
+
+      const result = risk.checkQuote(quote, inventory);
+      expect(result.allowed).toBe(true);
+    });
+
+    it("should allow two-sided quote with adequate spread", () => {
+      const quote: Quote = {
+        ticker: "TEST-MARKET",
+        side: "yes",
+        bidPrice: 45,
+        bidSize: 10,
+        askPrice: 55, // Spread = 10, above default min of 2
+        askSize: 10,
+      };
+
+      const result = risk.checkQuote(quote, inventory);
+      expect(result.allowed).toBe(true);
+    });
+
+    it("should reject two-sided quote with spread below minimum", () => {
       const quote: Quote = {
         ticker: "TEST-MARKET",
         side: "yes",

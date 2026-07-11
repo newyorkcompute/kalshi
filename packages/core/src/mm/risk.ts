@@ -104,13 +104,15 @@ export class RiskManager {
       return { allowed: false, reason: `Trading halted: ${this.haltReason}` };
     }
 
-    // Check spread
-    const spread = quote.askPrice - quote.bidPrice;
-    if (spread < this.limits.minSpread) {
-      return {
-        allowed: false,
-        reason: `Spread ${spread}¢ below minimum ${this.limits.minSpread}¢`,
-      };
+    // Check spread (two-sided quotes only; one-sided quotes use price 0 on the inactive side)
+    if (quote.bidSize > 0 && quote.askSize > 0) {
+      const spread = quote.askPrice - quote.bidPrice;
+      if (spread < this.limits.minSpread) {
+        return {
+          allowed: false,
+          reason: `Spread ${spread}¢ below minimum ${this.limits.minSpread}¢`,
+        };
+      }
     }
 
     // Check order sizes
