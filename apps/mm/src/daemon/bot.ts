@@ -400,6 +400,7 @@ export class Bot {
         try {
           const weatherResult = await this.weatherScanner.scan();
           console.log(formatWeatherScanResults(weatherResult));
+          this.logToFile(this.formatWeatherScanLogLine(weatherResult, weatherConfig.minEdgeCents));
 
           // Add discovered weather markets
           for (const opp of weatherResult.opportunities) {
@@ -1610,6 +1611,8 @@ export class Bot {
 
   private async onWeatherScanComplete(result: WeatherScanResult): Promise<void> {
     console.log(formatWeatherScanResults(result));
+    const minEdgeCents = this.config.strategy["weather-informed"].minEdgeCents;
+    this.logToFile(this.formatWeatherScanLogLine(result, minEdgeCents));
 
     const newTickers = new Set(result.opportunities.map(o => o.ticker));
 
@@ -1784,6 +1787,14 @@ export class Bot {
       p99: sorted[Math.floor(len * 0.99)] ?? 0,
       max: sorted[len - 1] ?? 0,
     };
+  }
+
+  private formatWeatherScanLogLine(result: WeatherScanResult, minEdgeCents: number): string {
+    return (
+      `Weather scan: ${result.totalWeatherMarkets} total, ` +
+      `${result.marketsWithFairValue} with fair values, ` +
+      `${result.marketsWithEdge} with edge >= ${minEdgeCents}c`
+    );
   }
 
   /**
