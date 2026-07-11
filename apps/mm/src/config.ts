@@ -109,7 +109,9 @@ const WeatherInformedStrategySchema = z.object({
   // Skip range bucket (B-prefix) markets entirely — they have asymmetric loss profile
   skipRangeBuckets: z.boolean().default(false),
   // Weather service config
-  refreshIntervalMin: z.number().min(5).max(120).default(30),
+  refreshIntervalMin: z.number().min(5).max(120).default(10),
+  // Stop opening new positions this many hours before settlement
+  noNewPositionsFinalHours: z.number().min(0).max(24).default(2),
   // Sigma overrides for calibration (°F)
   highSigma: SigmaOverridesSchema,
   lowSigma: SigmaOverridesSchema,

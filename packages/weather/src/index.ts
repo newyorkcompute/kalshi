@@ -38,6 +38,7 @@ export type {
   CityForecast,
   FairValue,
   EdgeOpportunity,
+  ObservedDayExtremes,
 } from "./types.js";
 
 // City configuration
@@ -60,6 +61,10 @@ export {
   probAbove,
   probBelow,
   probInRange,
+  probAboveWithObservedMax,
+  probBelowWithObservedMax,
+  probBelowWithObservedMin,
+  probAboveWithObservedMin,
   probToCents,
   getSigma,
   DEFAULT_HIGH_SIGMA,
@@ -74,5 +79,6 @@ export { NWSClient } from "./nws-client.js";
 export {
   computeFairValue,
   computeLeadTimeHours,
+  isSameDayMarket,
   type FairValueConfig,
 } from "./fair-value.js";

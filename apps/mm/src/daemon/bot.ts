@@ -383,6 +383,9 @@ export class Bot {
             lowSigma: weatherConfig.lowSigma,
           },
         });
+        this.weatherService.setOnFairValuesUpdated((changedTickers) => {
+          void this.onFairValuesUpdated(changedTickers);
+        });
         this.weatherScanner = new WeatherScanner(
           this.marketApi!,
           this.weatherService,
@@ -1576,9 +1579,21 @@ export class Bot {
     }
   }
 
-  /**
-   * Handle weather scan completion - update active weather markets.
-   */
+  private onFairValuesUpdated(changedTickers: string[]): void {
+    if (this.paused || this.risk.shouldHalt()) return;
+
+    for (const ticker of changedTickers) {
+      if (!this.activeMarkets.has(ticker)) continue;
+
+      this.lastSentQuote.delete(ticker);
+      this.lastQuoteUpdate.delete(ticker);
+
+      void this.updateQuotes(ticker).then(() => {
+        this.lastQuoteUpdate.set(ticker, Date.now());
+      });
+    }
+  }
+
   private async onWeatherScanComplete(result: WeatherScanResult): Promise<void> {
     console.log(formatWeatherScanResults(result));
 

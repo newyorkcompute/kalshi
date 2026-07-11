@@ -37,6 +37,8 @@ export interface WeatherInformedParams {
   priceOffset: number;
   /** Skip range bucket markets entirely — they have asymmetric loss profile (default false) */
   skipRangeBuckets: boolean;
+  /** Hours before settlement to stop opening new positions (default 2) */
+  noNewPositionsFinalHours: number;
 }
 
 const DEFAULT_PARAMS: WeatherInformedParams = {
@@ -46,6 +48,7 @@ const DEFAULT_PARAMS: WeatherInformedParams = {
   maxOrderSize: 10,
   priceOffset: 1,
   skipRangeBuckets: false,
+  noNewPositionsFinalHours: 2,
 };
 
 export class WeatherInformedStrategy extends BaseStrategy {
@@ -90,6 +93,15 @@ export class WeatherInformedStrategy extends BaseStrategy {
 
     // Current inventory
     const inventory = position?.netExposure ?? 0;
+
+    const cutoffSeconds = this.params.noNewPositionsFinalHours * 3600;
+    if (
+      inventory === 0 &&
+      snapshot.timeToExpiry !== undefined &&
+      snapshot.timeToExpiry < cutoffSeconds
+    ) {
+      return [];
+    }
 
     // Check position limits
     if (Math.abs(inventory) >= this.params.maxPositionPerMarket) {

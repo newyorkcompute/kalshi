@@ -71,6 +71,18 @@ export interface NWSGridPoint {
   forecastHourlyUrl: string;
 }
 
+/** Observed running temperature extremes for a local calendar day at a station */
+export interface ObservedDayExtremes {
+  /** Date (YYYY-MM-DD) in the station's local timezone */
+  date: string;
+  /** Highest observed temperature so far today (°F), or null if no readings */
+  maxF: number | null;
+  /** Lowest observed temperature so far today (°F), or null if no readings */
+  minF: number | null;
+  /** When observations were fetched */
+  fetchedAt: Date;
+}
+
 /** Daily temperature forecast for a single day */
 export interface DailyForecast {
   /** Date (YYYY-MM-DD) */

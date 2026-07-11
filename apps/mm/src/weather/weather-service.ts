@@ -6,7 +6,7 @@
  * that the WeatherInformedStrategy can query on each tick.
  *
  * Responsibilities:
- * 1. Periodically refresh NWS forecasts (default every 30 min)
+ * 1. Periodically refresh NWS forecasts (default every 10 min)
  * 2. Map each weather ticker → city → forecast → fair value
  * 3. Expose getFairValue(ticker) for the strategy
  * 4. Log model predictions for future calibration
@@ -19,20 +19,24 @@ import {
   lookupCity,
   computeFairValue,
   computeLeadTimeHours,
+  isSameDayMarket,
   type FairValue,
   type CityConfig,
   type FairValueConfig,
+  type ObservedDayExtremes,
 } from "@newyorkcompute/kalshi-weather";
 
 export interface WeatherServiceConfig {
-  /** How often to refresh NWS data (minutes). Default 30. */
+  /** How often to refresh NWS data (minutes). Default 10. */
   refreshIntervalMin: number;
   /** Sigma overrides for calibration */
   fairValueConfig?: FairValueConfig;
+  /** Called after refresh when fair prices change for tracked tickers */
+  onFairValuesUpdated?: (changedTickers: string[]) => void;
 }
 
 const DEFAULT_CONFIG: WeatherServiceConfig = {
-  refreshIntervalMin: 30,
+  refreshIntervalMin: 10,
 };
 
 export class WeatherService {
@@ -54,6 +58,10 @@ export class WeatherService {
   constructor(config?: Partial<WeatherServiceConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.nws = new NWSClient();
+  }
+
+  setOnFairValuesUpdated(callback: (changedTickers: string[]) => void): void {
+    this.config.onFairValuesUpdated = callback;
   }
 
   /**
@@ -139,8 +147,25 @@ export class WeatherService {
    * Force a refresh of all forecasts and fair values.
    */
   async refresh(): Promise<void> {
+    const previousPrices = new Map<string, number>();
+    for (const [ticker, fv] of this.fairValues) {
+      previousPrices.set(ticker, fv.fairPriceCents);
+    }
+
     await this.refreshForecasts();
     await this.recomputeAllFairValues();
+
+    const changedTickers: string[] = [];
+    for (const [ticker, fv] of this.fairValues) {
+      const previous = previousPrices.get(ticker);
+      if (previous !== undefined && previous !== fv.fairPriceCents) {
+        changedTickers.push(ticker);
+      }
+    }
+
+    if (changedTickers.length > 0) {
+      this.config.onFairValuesUpdated?.(changedTickers);
+    }
   }
 
   /**
@@ -228,6 +253,25 @@ export class WeatherService {
     }
   }
 
+  private async getObservationsForMarket(
+    city: CityConfig,
+    parsed: NonNullable<ReturnType<typeof parseWeatherTicker>>,
+  ): Promise<ObservedDayExtremes | null> {
+    try {
+      const timeZone = await this.nws.getStationTimezone(city.nwsStation);
+      if (!isSameDayMarket(parsed.date, timeZone)) {
+        return null;
+      }
+      return await this.nws.getObservedDayExtremes(city, parsed.date);
+    } catch (error) {
+      console.error(
+        `[WeatherService] Failed to fetch observations for ${city.kalshiCode} on ${parsed.date}:`,
+        error,
+      );
+      return null;
+    }
+  }
+
   private async computeAndCacheFairValue(
     ticker: string,
     parsed: NonNullable<ReturnType<typeof parseWeatherTicker>>,
@@ -243,11 +287,13 @@ export class WeatherService {
       }
 
       const leadTimeHours = computeLeadTimeHours(parsed.date);
+      const observed = await this.getObservationsForMarket(city, parsed);
       const fairValue = computeFairValue(
         parsed,
         forecast,
         leadTimeHours,
         this.config.fairValueConfig,
+        observed,
       );
 
       this.fairValues.set(ticker, fairValue);

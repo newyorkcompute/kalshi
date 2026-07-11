@@ -171,6 +171,75 @@ export function probInRange(
 }
 
 /**
+ * P(daily high > strike) when an intraday running max M is already known.
+ *
+ * The settled high is max(M, remainder-of-day high). If M already cleared the
+ * strike the contract is effectively won; otherwise the forecast still applies
+ * but the effective mean is raised to M so we never underprice what is locked in.
+ */
+export function probAboveWithObservedMax(
+  forecast: number,
+  strike: number,
+  sigma: number,
+  observedMax: number,
+): number {
+  if (observedMax >= strike) {
+    return 1.0;
+  }
+  const effectiveForecast = Math.max(forecast, observedMax);
+  return probAbove(effectiveForecast, strike, sigma);
+}
+
+/**
+ * P(daily high < strike) with a known intraday running max M.
+ * Once M reaches or exceeds the strike, the daily high cannot finish below it.
+ */
+export function probBelowWithObservedMax(
+  forecast: number,
+  strike: number,
+  sigma: number,
+  observedMax: number,
+): number {
+  if (observedMax >= strike) {
+    return 0.0;
+  }
+  const effectiveForecast = Math.max(forecast, observedMax);
+  return probBelow(effectiveForecast, strike, sigma);
+}
+
+/**
+ * P(daily low < strike) when an intraday running min m is already known.
+ */
+export function probBelowWithObservedMin(
+  forecast: number,
+  strike: number,
+  sigma: number,
+  observedMin: number,
+): number {
+  if (observedMin <= strike) {
+    return 1.0;
+  }
+  const effectiveForecast = Math.min(forecast, observedMin);
+  return probBelow(effectiveForecast, strike, sigma);
+}
+
+/**
+ * P(daily low > strike) with a known intraday running min m.
+ */
+export function probAboveWithObservedMin(
+  forecast: number,
+  strike: number,
+  sigma: number,
+  observedMin: number,
+): number {
+  if (observedMin <= strike) {
+    return 0.0;
+  }
+  const effectiveForecast = Math.min(forecast, observedMin);
+  return probAbove(effectiveForecast, strike, sigma);
+}
+
+/**
  * Convert a probability (0-1) to a fair price in cents (1-99).
  */
 export function probToCents(probability: number): number {

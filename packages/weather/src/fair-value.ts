@@ -7,11 +7,15 @@
  * This is the main entry point for the weather intelligence system.
  */
 
-import type { ParsedTicker, DailyForecast, FairValue } from "./types.js";
+import type { ParsedTicker, DailyForecast, FairValue, ObservedDayExtremes } from "./types.js";
 import {
   probAbove,
   probBelow,
   probInRange,
+  probAboveWithObservedMax,
+  probBelowWithObservedMax,
+  probBelowWithObservedMin,
+  probAboveWithObservedMin,
   probToCents,
   getSigma,
   DEFAULT_HIGH_SIGMA,
@@ -40,6 +44,7 @@ export function computeFairValue(
   forecast: DailyForecast,
   leadTimeHours: number,
   config?: FairValueConfig,
+  observed?: ObservedDayExtremes | null,
 ): FairValue {
   // Get the relevant forecast temperature
   const forecastTemp = parsed.tempType === "high" ? forecast.highF : forecast.lowF;
@@ -50,15 +55,52 @@ export function computeFairValue(
     : { ...DEFAULT_LOW_SIGMA, ...config?.lowSigma };
   const sigma = getSigma(leadTimeHours, sigmaConfig);
 
+  const useObservations =
+    observed !== null &&
+    observed !== undefined &&
+    observed.date === parsed.date;
+
   // Compute probability based on direction
   let probability: number;
 
   switch (parsed.direction) {
     case "above":
-      probability = probAbove(forecastTemp, parsed.strike, sigma);
+      if (useObservations && parsed.tempType === "high" && observed.maxF !== null) {
+        probability = probAboveWithObservedMax(
+          forecastTemp,
+          parsed.strike,
+          sigma,
+          observed.maxF,
+        );
+      } else if (useObservations && parsed.tempType === "low" && observed.minF !== null) {
+        probability = probAboveWithObservedMin(
+          forecastTemp,
+          parsed.strike,
+          sigma,
+          observed.minF,
+        );
+      } else {
+        probability = probAbove(forecastTemp, parsed.strike, sigma);
+      }
       break;
     case "below":
-      probability = probBelow(forecastTemp, parsed.strike, sigma);
+      if (useObservations && parsed.tempType === "high" && observed.maxF !== null) {
+        probability = probBelowWithObservedMax(
+          forecastTemp,
+          parsed.strike,
+          sigma,
+          observed.maxF,
+        );
+      } else if (useObservations && parsed.tempType === "low" && observed.minF !== null) {
+        probability = probBelowWithObservedMin(
+          forecastTemp,
+          parsed.strike,
+          sigma,
+          observed.minF,
+        );
+      } else {
+        probability = probBelow(forecastTemp, parsed.strike, sigma);
+      }
       break;
     case "range":
       if (parsed.rangeLow !== undefined && parsed.rangeHigh !== undefined) {
@@ -79,6 +121,19 @@ export function computeFairValue(
     leadTimeHours,
     computedAt: new Date(),
   };
+}
+
+/**
+ * Whether a market's target date is the current local calendar day at a station.
+ */
+export function isSameDayMarket(
+  targetDate: string,
+  timeZone: string,
+  now?: Date,
+): boolean {
+  const current = now ?? new Date();
+  const localToday = current.toLocaleDateString("en-CA", { timeZone });
+  return targetDate === localToday;
 }
 
 /**
