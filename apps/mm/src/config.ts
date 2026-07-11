@@ -124,6 +124,22 @@ const StrategyConfigSchema = z.object({
   "weather-informed": WeatherInformedStrategySchema.default({}),
 });
 
+const DrawdownConfigSchema = z
+  .object({
+    scaleDownStart: z.number().min(1).default(500),
+    halfSizeDrawdown: z.number().min(1).default(1000),
+    haltDrawdown: z.number().min(1).default(2000),
+  })
+  .refine(
+    (d) =>
+      d.scaleDownStart <= d.halfSizeDrawdown &&
+      d.halfSizeDrawdown <= d.haltDrawdown,
+    {
+      message:
+        "drawdown thresholds must be ascending: scaleDownStart <= halfSizeDrawdown <= haltDrawdown",
+    }
+  );
+
 const RiskConfigSchema = z.object({
   maxPositionPerMarket: z
     .number()
@@ -136,6 +152,7 @@ const RiskConfigSchema = z.object({
   maxDailyLoss: z.number().min(1).default(DEFAULT_RISK_LIMITS.maxDailyLoss),
   maxOrderSize: z.number().min(1).default(DEFAULT_RISK_LIMITS.maxOrderSize),
   minSpread: z.number().min(1).default(DEFAULT_RISK_LIMITS.minSpread),
+  drawdown: DrawdownConfigSchema.default({}),
 });
 
 const DaemonConfigSchema = z.object({
@@ -296,6 +313,10 @@ risk:
   maxDailyLoss: 5000          # Max loss in cents ($50)
   maxOrderSize: 25            # Max contracts per order
   minSpread: 2                # Min spread in cents
+  drawdown:
+    scaleDownStart: 500       # Start scaling down at $5 drawdown from peak
+    halfSizeDrawdown: 1000    # 50% size at $10 drawdown
+    haltDrawdown: 2000        # Halt at $20 drawdown
 
 # Daemon settings
 daemon:

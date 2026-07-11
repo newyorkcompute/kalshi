@@ -69,6 +69,54 @@ risk:
       expect(config.risk.maxDailyLoss).toBe(10000);
     });
 
+    it("should apply default drawdown thresholds", () => {
+      const yaml = `
+markets:
+  - TEST-MARKET
+      `;
+      writeFileSync(testConfigPath, yaml);
+
+      const config = loadConfig(testConfigPath);
+
+      expect(config.risk.drawdown.scaleDownStart).toBe(500);
+      expect(config.risk.drawdown.halfSizeDrawdown).toBe(1000);
+      expect(config.risk.drawdown.haltDrawdown).toBe(2000);
+    });
+
+    it("should accept explicit drawdown thresholds", () => {
+      const yaml = `
+markets:
+  - TEST-MARKET
+risk:
+  drawdown:
+    scaleDownStart: 300
+    halfSizeDrawdown: 600
+    haltDrawdown: 1200
+      `;
+      writeFileSync(testConfigPath, yaml);
+
+      const config = loadConfig(testConfigPath);
+
+      expect(config.risk.drawdown.scaleDownStart).toBe(300);
+      expect(config.risk.drawdown.halfSizeDrawdown).toBe(600);
+      expect(config.risk.drawdown.haltDrawdown).toBe(1200);
+    });
+
+    it("should reject non-ascending drawdown thresholds", () => {
+      const yaml = `
+markets:
+  - TEST-MARKET
+risk:
+  drawdown:
+    scaleDownStart: 1000
+    halfSizeDrawdown: 500
+    haltDrawdown: 2000
+      `;
+      writeFileSync(testConfigPath, yaml);
+
+      expect(() => loadConfig(testConfigPath)).toThrow("Invalid configuration");
+    });
+
     it("should throw on missing file", () => {
       expect(() => loadConfig("/nonexistent/path.yaml")).toThrow(
         "Config file not found"

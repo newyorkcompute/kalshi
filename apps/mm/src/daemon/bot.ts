@@ -190,6 +190,11 @@ export class Bot {
   private sessionStartTime: number = 0;
   private lastSummaryTime: number = 0;
   private readonly SUMMARY_INTERVAL_MS = 60000; // Log summary every minute
+  private lastMtmRiskCheckTime: number = 0;
+  private readonly MTM_RISK_INTERVAL_MS = 30_000;
+  private lastSettlementSyncTime: number = 0;
+  private readonly SETTLEMENT_SYNC_INTERVAL_MS = 300_000;
+  private processedSettlements: Set<string> = new Set();
 
   // Rate-limit rejection log messages (key = reason, value = last log timestamp)
   private _rejectionLogTimes: Map<string, number> = new Map();
@@ -236,7 +241,7 @@ export class Bot {
     this.adverseDetector = new AdverseSelectionDetector();
     
     // Initialize advanced risk controls with config (or defaults)
-    this.drawdownManager = new DrawdownManager();
+    this.drawdownManager = new DrawdownManager(this.config.risk.drawdown);
     this.circuitBreaker = new CircuitBreaker();
 
     // Initialize compliance module (formal Market Maker Program)
@@ -475,11 +480,22 @@ export class Bot {
         await this.checkConnectionHealth();
 
         // Check if circuit breaker has cooled down - auto-resume
-        if (this.paused && !this.circuitBreaker.isTriggered() && !this.drawdownManager.shouldHalt()) {
+        if (
+          this.paused &&
+          !this.risk.shouldHalt() &&
+          !this.circuitBreaker.isTriggered() &&
+          !this.drawdownManager.shouldHalt()
+        ) {
           console.log("[Bot] 🟢 Risk controls cleared - auto-resuming");
           this.logToFile("Auto-resuming after risk cooldown");
           this.paused = false;
         }
+
+        // === MARK-TO-MARKET RISK EVALUATION ===
+        this.maybeEvaluateMarkToMarketRisk();
+
+        // === SETTLEMENT SYNC ===
+        await this.maybeSyncSettlements();
 
         // === P1: STALE ORDER ENFORCEMENT ===
         await this.enforceStaleOrders();
@@ -1251,8 +1267,9 @@ export class Bot {
     
     // === ADVANCED RISK CONTROLS ===
     
-    // Update drawdown tracking
-    this.drawdownManager.updatePnL(pnlAfter.realizedToday);
+    // Update drawdown tracking (mark-to-market total P&L)
+    const mtmPnL = this.getMarkToMarketPnL();
+    this.drawdownManager.updatePnL(mtmPnL.total);
     const drawdownStatus = this.drawdownManager.getStatus();
     if (drawdownStatus.shouldHalt) {
       console.warn(`[Bot] 🛑 DRAWDOWN HALT: Drawdown ${drawdownStatus.drawdown}¢ exceeds limit. Pausing.`);
@@ -1787,6 +1804,161 @@ export class Bot {
       appendFileSync(this.fillsLogFile, JSON.stringify(record) + "\n");
     } catch {
       // Ignore file write errors
+    }
+  }
+
+  /**
+   * Build current mid prices for all active markets and open positions
+   */
+  private buildCurrentPriceMap(): Map<string, number> {
+    const prices = new Map<string, number>();
+    const tickers = new Set([
+      ...this.activeMarkets,
+      ...this.inventory.getAllPositions().map((p) => p.ticker),
+    ]);
+
+    for (const ticker of tickers) {
+      const bbo = this.orderbookManager.getBBO(ticker);
+      if (bbo) {
+        prices.set(ticker, bbo.midPrice);
+        continue;
+      }
+
+      const data = this.marketData.get(ticker);
+      if (data) {
+        prices.set(ticker, (data.bestBid + data.bestAsk) / 2);
+      }
+    }
+
+    return prices;
+  }
+
+  /**
+   * Get mark-to-market P&L using current prices
+   */
+  private getMarkToMarketPnL(): PnLSummary {
+    return this.inventory.getPnLSummary(this.buildCurrentPriceMap());
+  }
+
+  /**
+   * Periodic mark-to-market risk evaluation
+   */
+  private maybeEvaluateMarkToMarketRisk(): void {
+    const now = Date.now();
+    if (now - this.lastMtmRiskCheckTime < this.MTM_RISK_INTERVAL_MS) return;
+    this.lastMtmRiskCheckTime = now;
+
+    const pnl = this.getMarkToMarketPnL();
+    this.drawdownManager.updatePnL(pnl.total);
+
+    const drawdownStatus = this.drawdownManager.getStatus();
+    if (drawdownStatus.shouldHalt && !this.paused) {
+      console.warn(
+        `[Bot] 🛑 DRAWDOWN HALT (MTM): Drawdown ${drawdownStatus.drawdown}¢ exceeds limit. Pausing.`
+      );
+      this.logToFile(`DRAWDOWN HALT (MTM): ${drawdownStatus.drawdown}¢`);
+      this.paused = true;
+      void this.orderManager?.cancelAll();
+    }
+
+    if (pnl.total < -this.config.risk.maxDailyLoss) {
+      const reason = `Mark-to-market daily loss limit reached: ${pnl.total}¢ (realized ${pnl.realizedToday}¢, unrealized ${pnl.unrealized}¢)`;
+      console.error(`[Bot] 🛑 DAILY LOSS HALT (MTM): ${reason}`);
+      this.logToFile(`DAILY LOSS HALT (MTM): ${reason}`);
+      this.risk.halt(reason);
+      this.paused = true;
+      void this.orderManager?.cancelAll();
+    }
+  }
+
+  /**
+   * Sync settled markets from Kalshi API
+   */
+  private async maybeSyncSettlements(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastSettlementSyncTime < this.SETTLEMENT_SYNC_INTERVAL_MS) return;
+    this.lastSettlementSyncTime = now;
+
+    if (!this.portfolioApi) return;
+
+    try {
+      const minTs = Math.floor((this.sessionStartTime - 86_400_000) / 1000);
+      const response = await this.portfolioApi.getSettlements(
+        200,
+        undefined,
+        undefined,
+        undefined,
+        minTs
+      );
+
+      const settlements = response.data?.settlements ?? [];
+      for (const settlement of settlements) {
+        const ticker = settlement.ticker;
+        if (!ticker) continue;
+
+        const settlementKey = `${ticker}:${settlement.settled_time ?? ""}`;
+        if (this.processedSettlements.has(settlementKey)) continue;
+
+        const position = this.inventory.getPosition(ticker);
+        if (
+          !position ||
+          (position.yesContracts === 0 && position.noContracts === 0)
+        ) {
+          continue;
+        }
+
+        const marketResult = settlement.market_result?.toLowerCase();
+        if (marketResult !== "yes" && marketResult !== "no") continue;
+
+        const settlementValueCents = marketResult === "yes" ? 100 : 0;
+        const realizedPnL = this.inventory.settleMarket(
+          ticker,
+          settlementValueCents
+        );
+
+        this.processedSettlements.add(settlementKey);
+
+        console.log(
+          `[Bot] 📋 SETTLEMENT: ${ticker} → ${marketResult.toUpperCase()} | Realized P&L: ${realizedPnL > 0 ? "+" : ""}${realizedPnL}¢`
+        );
+        this.logToFile(
+          `SETTLEMENT: ${ticker} ${marketResult} P&L=${realizedPnL}¢`
+        );
+
+        this.risk.recordPnL(realizedPnL);
+
+        const mtmPnL = this.getMarkToMarketPnL();
+        this.drawdownManager.updatePnL(mtmPnL.total);
+
+        const mktPnl = this.marketPnL.get(ticker) ?? {
+          realized: 0,
+          fills: 0,
+          addedAt: Date.now(),
+        };
+        mktPnl.realized += realizedPnL;
+        this.marketPnL.set(ticker, mktPnl);
+
+        if (this.risk.shouldHalt()) {
+          console.error(
+            `[Bot] 🛑 DAILY LOSS HALT after settlement: ${this.risk.getHaltReason()}`
+          );
+          this.paused = true;
+          await this.orderManager?.cancelAll();
+        }
+
+        const drawdownStatus = this.drawdownManager.getStatus();
+        if (drawdownStatus.shouldHalt) {
+          console.warn(
+            `[Bot] 🛑 DRAWDOWN HALT after settlement: ${drawdownStatus.drawdown}¢`
+          );
+          this.paused = true;
+        }
+
+        await this.removeMarket(ticker);
+      }
+    } catch (error) {
+      console.error("[Bot] Settlement sync failed:", error);
+      this.logToFile(`Settlement sync failed: ${error}`);
     }
   }
 

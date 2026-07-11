@@ -318,6 +318,28 @@ describe("RiskManager", () => {
     });
   });
 
+  describe("recordPnL", () => {
+    it("should track daily PnL without a fill", () => {
+      risk.recordPnL(75);
+      expect(risk.getDailyPnL()).toBe(75);
+    });
+
+    it("should halt when daily loss limit reached via recordPnL", () => {
+      const customRisk = new RiskManager({ maxDailyLoss: 100 });
+
+      customRisk.recordPnL(-150);
+
+      expect(customRisk.shouldHalt()).toBe(true);
+      expect(customRisk.getHaltReason()).toContain("Daily loss limit");
+    });
+
+    it("should accumulate multiple recordPnL calls", () => {
+      risk.recordPnL(50);
+      risk.recordPnL(-20);
+      expect(risk.getDailyPnL()).toBe(30);
+    });
+  });
+
   describe("resetDaily", () => {
     it("should reset daily PnL", () => {
       const fill: Fill = {
