@@ -416,11 +416,21 @@ export class Bot {
         }
       }
 
-      // Validate we have markets to trade
+      // Validate we have markets to trade (or a scanner that can add them later)
       if (this.activeMarkets.size === 0) {
-        throw new Error(
-          "No markets to trade! Either add markets to config.yaml or enable the scanner."
-        );
+        const canDiscoverMarkets =
+          (this.isWeatherStrategy && this.weatherScanner) || this.scannerEnabled;
+        if (canDiscoverMarkets) {
+          const msg =
+            "No markets with edge right now — starting idle, periodic scanner will add markets";
+          log("Bot", msg);
+          console.log(`[Bot] ${msg}`);
+          this.logToFile(msg);
+        } else {
+          throw new Error(
+            "No markets to trade! Either add markets to config.yaml or enable the scanner."
+          );
+        }
       }
 
       // === P0: ORDER RECONCILIATION ON STARTUP ===
@@ -810,10 +820,14 @@ export class Bot {
     // Subscribe to ticker + orderbook_delta for our markets, plus fill channel
     if (this.ws) {
       const marketList = this.getActiveMarkets();
-      this.ws.subscribe(["ticker", "orderbook_delta"], marketList);
+      if (marketList.length > 0) {
+        this.ws.subscribe(["ticker", "orderbook_delta"], marketList);
+        log("Bot", `Subscribed to ${marketList.length} markets`);
+        console.log("[Bot] Waiting for market data...");
+      } else {
+        log("Bot", "No markets to subscribe yet — waiting for scanner");
+      }
       this.ws.subscribe(["fill"]); // Authenticated channel for our fills
-      log("Bot", `Subscribed to ${marketList.length} markets`);
-      console.log("[Bot] Waiting for market data...");
     }
 
     // If reconnecting, sync positions in case we missed fills
