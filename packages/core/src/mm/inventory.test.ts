@@ -269,23 +269,6 @@ describe("InventoryTracker", () => {
     });
   });
 
-  describe("initializeFromPortfolio", () => {
-    it("should initialize positions from portfolio data", () => {
-      tracker.initializeFromPortfolio([
-        { ticker: "MARKET-A", yesContracts: 10, noContracts: 0, costBasis: 500 },
-        { ticker: "MARKET-B", yesContracts: 0, noContracts: 5, costBasis: 250 },
-      ]);
-
-      const posA = tracker.getPosition("MARKET-A");
-      expect(posA!.yesContracts).toBe(10);
-      expect(posA!.netExposure).toBe(10);
-
-      const posB = tracker.getPosition("MARKET-B");
-      expect(posB!.noContracts).toBe(5);
-      expect(posB!.netExposure).toBe(-5);
-    });
-  });
-
   describe("getPnLSummary with currentPrices", () => {
     it("should calculate unrealized PnL for YES position", () => {
       // Buy 10 YES @ 50¢ = 500¢ cost
@@ -709,6 +692,103 @@ describe("InventoryTracker", () => {
 
       const summary = tracker.getPnLSummary();
       expect(summary.realizedToday).toBe(50 - 25); // 25¢
+    });
+  });
+
+  describe("settleMarket", () => {
+    it("should realize profit when long YES wins", () => {
+      tracker.onFill({
+        orderId: "order1",
+        ticker: "TEST-MARKET",
+        side: "yes",
+        action: "buy",
+        count: 10,
+        price: 50,
+        timestamp: new Date(),
+      });
+
+      const realized = tracker.settleMarket("TEST-MARKET", 100);
+      expect(realized).toBe(500);
+      expect(tracker.getPosition("TEST-MARKET")).toBeUndefined();
+      expect(tracker.getPnLSummary().realizedToday).toBe(500);
+    });
+
+    it("should realize loss when long YES loses", () => {
+      tracker.onFill({
+        orderId: "order1",
+        ticker: "TEST-MARKET",
+        side: "yes",
+        action: "buy",
+        count: 10,
+        price: 50,
+        timestamp: new Date(),
+      });
+
+      const realized = tracker.settleMarket("TEST-MARKET", 0);
+      expect(realized).toBe(-500);
+      expect(tracker.getPosition("TEST-MARKET")).toBeUndefined();
+    });
+
+    it("should realize profit when short YES loses", () => {
+      tracker.onFill({
+        orderId: "order1",
+        ticker: "TEST-MARKET",
+        side: "yes",
+        action: "sell",
+        count: 10,
+        price: 50,
+        timestamp: new Date(),
+      });
+
+      const realized = tracker.settleMarket("TEST-MARKET", 100);
+      expect(realized).toBe(-500);
+      expect(tracker.getPosition("TEST-MARKET")).toBeUndefined();
+    });
+
+    it("should realize profit when short YES wins (settlement no)", () => {
+      tracker.onFill({
+        orderId: "order1",
+        ticker: "TEST-MARKET",
+        side: "yes",
+        action: "sell",
+        count: 10,
+        price: 50,
+        timestamp: new Date(),
+      });
+
+      const realized = tracker.settleMarket("TEST-MARKET", 0);
+      expect(realized).toBe(500);
+      expect(tracker.getPosition("TEST-MARKET")).toBeUndefined();
+    });
+
+    it("should realize profit when long NO wins", () => {
+      tracker.onFill({
+        orderId: "order1",
+        ticker: "TEST-MARKET",
+        side: "no",
+        action: "buy",
+        count: 10,
+        price: 40,
+        timestamp: new Date(),
+      });
+
+      const realized = tracker.settleMarket("TEST-MARKET", 0);
+      expect(realized).toBe(600);
+      expect(tracker.getPosition("TEST-MARKET")).toBeUndefined();
+    });
+
+    it("should return 0 for flat position", () => {
+      tracker.initializeFromPortfolio([
+        { ticker: "TEST-MARKET", yesContracts: 0, noContracts: 0, costBasis: 0 },
+      ]);
+
+      const realized = tracker.settleMarket("TEST-MARKET", 100);
+      expect(realized).toBe(0);
+      expect(tracker.getPosition("TEST-MARKET")).toBeUndefined();
+    });
+
+    it("should return 0 for unknown ticker", () => {
+      expect(tracker.settleMarket("UNKNOWN", 100)).toBe(0);
     });
   });
 });

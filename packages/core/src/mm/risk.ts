@@ -197,9 +197,15 @@ export class RiskManager {
    * Update PnL on fill (checks daily loss limit)
    */
   onFill(fill: Fill, realizedPnL: number): void {
+    this.recordPnL(realizedPnL);
+  }
+
+  /**
+   * Record realized P&L from fills, settlements, or other sources
+   */
+  recordPnL(realizedPnL: number): void {
     this.dailyPnL += realizedPnL;
 
-    // Check daily loss limit
     if (this.dailyPnL < -this.limits.maxDailyLoss) {
       this.halt(`Daily loss limit reached: ${this.dailyPnL}¢`);
     }

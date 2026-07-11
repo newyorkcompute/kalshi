@@ -121,6 +121,51 @@ export class InventoryTracker {
   }
 
   /**
+   * Settle a market at expiration and realize remaining position P&L.
+   * @param settlementValueCents YES settlement price in cents (100 if yes, 0 if no)
+   * @returns Realized P&L from settlement in cents
+   */
+  settleMarket(ticker: string, settlementValueCents: number): number {
+    const position = this.positions.get(ticker);
+    if (!position) {
+      return 0;
+    }
+
+    if (
+      position.yesContracts === 0 &&
+      position.noContracts === 0
+    ) {
+      this.positions.delete(ticker);
+      return 0;
+    }
+
+    const noSettlement = 100 - settlementValueCents;
+    let realizedPnL = 0;
+
+    if (position.yesContracts > 0) {
+      const avgCost = position.yesCostBasis / position.yesContracts;
+      realizedPnL += position.yesContracts * (settlementValueCents - avgCost);
+    } else if (position.yesContracts < 0) {
+      const shortContracts = Math.abs(position.yesContracts);
+      const avgShortPrice = position.yesCostBasis / shortContracts;
+      realizedPnL += shortContracts * (avgShortPrice - settlementValueCents);
+    }
+
+    if (position.noContracts > 0) {
+      const avgCost = position.noCostBasis / position.noContracts;
+      realizedPnL += position.noContracts * (noSettlement - avgCost);
+    } else if (position.noContracts < 0) {
+      const shortContracts = Math.abs(position.noContracts);
+      const avgShortPrice = position.noCostBasis / shortContracts;
+      realizedPnL += shortContracts * (avgShortPrice - noSettlement);
+    }
+
+    this.realizedPnL += realizedPnL;
+    this.positions.delete(ticker);
+    return realizedPnL;
+  }
+
+  /**
    * Reset daily stats (call at start of trading day)
    */
   resetDaily(): void {

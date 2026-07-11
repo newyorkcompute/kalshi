@@ -16,9 +16,9 @@ export interface DrawdownConfig {
 }
 
 const DEFAULT_DRAWDOWN_CONFIG: DrawdownConfig = {
-  scaleDownStart: 300,   // Start scaling at $3 drawdown
-  halfSizeDrawdown: 500, // 50% size at $5 drawdown
-  haltDrawdown: 1000,    // Halt at $10 drawdown
+  scaleDownStart: 500,
+  halfSizeDrawdown: 1000,
+  haltDrawdown: 2000,
 };
 
 /**
