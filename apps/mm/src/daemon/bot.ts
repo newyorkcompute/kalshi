@@ -1790,11 +1790,24 @@ export class Bot {
   }
 
   private formatWeatherScanLogLine(result: WeatherScanResult, minEdgeCents: number): string {
-    return (
+    const summary =
       `Weather scan: ${result.totalWeatherMarkets} total, ` +
       `${result.marketsWithFairValue} with fair values, ` +
-      `${result.marketsWithEdge} with edge >= ${minEdgeCents}c`
-    );
+      `${result.marketsWithEdge} with edge >= ${minEdgeCents}c`;
+
+    if (result.topEdges.length === 0) {
+      return summary;
+    }
+
+    const topEdges = result.topEdges
+      .map(
+        (e) =>
+          `${e.ticker} mkt=${Math.round(e.marketPriceCents)}c ` +
+          `fair=${e.fairValueCents}c edge=${Math.abs(e.edgeCents).toFixed(0)}c`,
+      )
+      .join("; ");
+
+    return `${summary} | Top edges: ${topEdges}`;
   }
 
   /**

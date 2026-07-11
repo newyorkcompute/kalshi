@@ -41,9 +41,18 @@ const DEFAULT_CONFIG: WeatherScannerConfig = {
   skipRangeBuckets: false,
 };
 
+export interface WeatherMarketEdge {
+  ticker: string;
+  marketPriceCents: number;
+  fairValueCents: number;
+  edgeCents: number;
+}
+
 export interface WeatherScanResult {
   /** Markets with sufficient edge */
   opportunities: EdgeOpportunity[];
+  /** Top markets by absolute edge (including sub-threshold) */
+  topEdges: WeatherMarketEdge[];
   /** Total weather markets found on Kalshi */
   totalWeatherMarkets: number;
   /** Markets with valid fair values */
@@ -52,6 +61,16 @@ export interface WeatherScanResult {
   marketsWithEdge: number;
   /** When this scan was performed */
   timestamp: Date;
+}
+
+/** Select top N markets by absolute edge (descending). */
+export function selectTopEdges(
+  candidates: WeatherMarketEdge[],
+  limit = 5,
+): WeatherMarketEdge[] {
+  return [...candidates]
+    .sort((a, b) => Math.abs(b.edgeCents) - Math.abs(a.edgeCents))
+    .slice(0, limit);
 }
 
 export class WeatherScanner {
@@ -94,6 +113,7 @@ export class WeatherScanner {
 
     // Step 3: Compute edge for each market
     const opportunities: EdgeOpportunity[] = [];
+    const edgeCandidates: WeatherMarketEdge[] = [];
     let marketsWithFairValue = 0;
     let skippedRangeBuckets = 0;
 
@@ -127,6 +147,13 @@ export class WeatherScanner {
       const edgeCents = marketMid - fairValue.fairPriceCents;
       const absEdge = Math.abs(edgeCents);
 
+      edgeCandidates.push({
+        ticker,
+        marketPriceCents: marketMid,
+        fairValueCents: fairValue.fairPriceCents,
+        edgeCents,
+      });
+
       if (absEdge >= this.config.minEdgeCents) {
         opportunities.push({
           ticker,
@@ -148,6 +175,7 @@ export class WeatherScanner {
 
     const result: WeatherScanResult = {
       opportunities: limited,
+      topEdges: selectTopEdges(edgeCandidates),
       totalWeatherMarkets: weatherMarkets.length,
       marketsWithFairValue,
       marketsWithEdge: limited.length,
