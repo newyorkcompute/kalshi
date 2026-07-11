@@ -4,6 +4,10 @@ import {
   probAbove,
   probBelow,
   probInRange,
+  probAboveWithObservedMax,
+  probBelowWithObservedMax,
+  probBelowWithObservedMin,
+  probAboveWithObservedMin,
   probToCents,
   getSigma,
   DEFAULT_HIGH_SIGMA,
@@ -149,6 +153,41 @@ describe("probToCents", () => {
   it("rounds correctly", () => {
     expect(probToCents(0.155)).toBe(16); // 15.5 → rounds to 16
     expect(probToCents(0.154)).toBe(15); // 15.4 → rounds to 15
+  });
+});
+
+describe("probAboveWithObservedMax", () => {
+  it("returns certainty when observed max is above strike", () => {
+    expect(probAboveWithObservedMax(80, 85, 2.5, 86)).toBe(1.0);
+  });
+
+  it("returns certainty when observed max equals strike", () => {
+    expect(probAboveWithObservedMax(80, 85, 2.5, 85)).toBe(1.0);
+  });
+
+  it("uses raised effective forecast when observed max is below strike", () => {
+    const withObs = probAboveWithObservedMax(80, 85, 2.5, 83);
+    const naive = probAbove(80, 85, 2.5);
+    expect(withObs).toBeGreaterThan(naive);
+  });
+});
+
+describe("probBelowWithObservedMax", () => {
+  it("returns zero when observed max already reached strike", () => {
+    expect(probBelowWithObservedMax(70, 72, 2.5, 73)).toBe(0.0);
+  });
+});
+
+describe("probBelowWithObservedMin", () => {
+  it("returns certainty when observed min is at or below strike", () => {
+    expect(probBelowWithObservedMin(30, 25, 2.5, 24)).toBe(1.0);
+    expect(probBelowWithObservedMin(30, 25, 2.5, 25)).toBe(1.0);
+  });
+});
+
+describe("probAboveWithObservedMin", () => {
+  it("returns zero when observed min is at or below strike", () => {
+    expect(probAboveWithObservedMin(30, 25, 2.5, 24)).toBe(0.0);
   });
 });
 

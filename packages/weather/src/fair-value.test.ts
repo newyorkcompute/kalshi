@@ -142,6 +142,53 @@ describe("computeFairValue", () => {
   });
 });
 
+describe("observation-aware fair value", () => {
+  it("prices above market at 99c when observed max already cleared strike", () => {
+    const parsed = makeParsed({ ticker: "KXHIGHAUS-26FEB12-T85", strike: 85, direction: "above" });
+    const forecast = makeForecast(82, 65, "2026-02-12");
+    const observed = { date: "2026-02-12", maxF: 86, minF: 60, fetchedAt: new Date() };
+    const result = computeFairValue(parsed, forecast, 6, undefined, observed);
+
+    expect(result.probability).toBe(1.0);
+    expect(result.fairPriceCents).toBe(99);
+  });
+
+  it("raises fair value when observed max is below strike but above forecast", () => {
+    const parsed = makeParsed({ ticker: "KXHIGHAUS-26FEB12-T85", strike: 85, direction: "above" });
+    const forecast = makeForecast(80, 65, "2026-02-12");
+    const observed = { date: "2026-02-12", maxF: 83, minF: 60, fetchedAt: new Date() };
+    const withoutObs = computeFairValue(parsed, forecast, 6);
+    const withObs = computeFairValue(parsed, forecast, 6, undefined, observed);
+
+    expect(withObs.probability).toBeGreaterThan(withoutObs.probability);
+    expect(withObs.fairPriceCents).toBeGreaterThan(withoutObs.fairPriceCents);
+  });
+
+  it("prices below market at 1c when observed max already exceeded strike", () => {
+    const parsed = makeParsed({
+      ticker: "KXHIGHAUS-26FEB12-T72",
+      strike: 72,
+      direction: "below",
+    });
+    const forecast = makeForecast(70, 55, "2026-02-12");
+    const observed = { date: "2026-02-12", maxF: 75, minF: 55, fetchedAt: new Date() };
+    const result = computeFairValue(parsed, forecast, 6, undefined, observed);
+
+    expect(result.probability).toBe(0.0);
+    expect(result.fairPriceCents).toBe(1);
+  });
+
+  it("ignores observations when date does not match market date", () => {
+    const parsed = makeParsed({ ticker: "KXHIGHAUS-26FEB12-T85", strike: 85, direction: "above" });
+    const forecast = makeForecast(82, 65, "2026-02-12");
+    const observed = { date: "2026-02-11", maxF: 90, minF: 60, fetchedAt: new Date() };
+    const withoutObs = computeFairValue(parsed, forecast, 18);
+    const withObs = computeFairValue(parsed, forecast, 18, undefined, observed);
+
+    expect(withObs.fairPriceCents).toBe(withoutObs.fairPriceCents);
+  });
+});
+
 describe("computeLeadTimeHours", () => {
   it("returns positive hours for future date", () => {
     const now = new Date("2026-02-11T12:00:00Z");

@@ -13,7 +13,7 @@
  * @see https://weather-gov.github.io/api/general-faqs
  */
 
-import type { CityConfig, NWSGridPoint, DailyForecast, CityForecast } from "./types.js";
+import type { CityConfig, NWSGridPoint, DailyForecast, CityForecast, ObservedDayExtremes } from "./types.js";
 
 // ─── Configuration ──────────────────────────────────────────────────────────
 
@@ -22,6 +22,9 @@ const USER_AGENT = "KalshiWeatherBot/1.0 (newyorkcompute; weather-market-maker)"
 
 /** How long to cache forecast data (ms) */
 const FORECAST_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+/** How long to cache station observations (ms) */
+const OBSERVATION_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 /** Max retries for transient errors */
 const MAX_RETRIES = 3;
@@ -58,6 +61,26 @@ interface NWSForecastResponse {
   };
 }
 
+interface NWSStationResponse {
+  properties: {
+    timeZone: string;
+  };
+}
+
+interface NWSObservationFeature {
+  properties: {
+    timestamp: string;
+    temperature: {
+      value: number | null;
+      unitCode: string;
+    } | null;
+  };
+}
+
+interface NWSObservationsResponse {
+  features: NWSObservationFeature[];
+}
+
 // ─── Client ─────────────────────────────────────────────────────────────────
 
 export class NWSClient {
@@ -66,6 +89,12 @@ export class NWSClient {
 
   /** Forecast cache: cityCode → CityForecast */
   private forecastCache: Map<string, CityForecast> = new Map();
+
+  /** Station timezone cache: stationId → IANA timezone */
+  private stationTimezoneCache: Map<string, string> = new Map();
+
+  /** Observed extremes cache: `${cityCode}:${date}` → ObservedDayExtremes */
+  private observationCache: Map<string, ObservedDayExtremes> = new Map();
 
   /** Custom User-Agent */
   private userAgent: string;
@@ -109,6 +138,66 @@ export class NWSClient {
   }
 
   /**
+   * Get observed running max/min for a city's settlement station on a local calendar day.
+   * Uses NWS station observations (same source Kalshi uses for settlement).
+   */
+  async getObservedDayExtremes(city: CityConfig, date: string): Promise<ObservedDayExtremes | null> {
+    const cacheKey = `${city.kalshiCode}:${date}`;
+    const cached = this.observationCache.get(cacheKey);
+    if (cached && Date.now() - cached.fetchedAt.getTime() < OBSERVATION_CACHE_TTL_MS) {
+      return cached;
+    }
+
+    const timeZone = await this.fetchStationTimezone(city.nwsStation);
+    const bounds = this.getLocalDayBounds(date, timeZone);
+    const url =
+      `${NWS_BASE_URL}/stations/${city.nwsStation}/observations` +
+      `?start=${encodeURIComponent(bounds.start)}&end=${encodeURIComponent(bounds.end)}&limit=500`;
+
+    const data = await this.fetchJson<NWSObservationsResponse>(url);
+    let maxF: number | null = null;
+    let minF: number | null = null;
+
+    for (const feature of data.features) {
+      const props = feature.properties;
+      const localDate = this.observationLocalDate(props.timestamp, timeZone);
+      if (localDate !== date) continue;
+
+      const tempF = this.observationTempF(props.temperature);
+      if (tempF === null) continue;
+
+      maxF = maxF === null ? tempF : Math.max(maxF, tempF);
+      minF = minF === null ? tempF : Math.min(minF, tempF);
+    }
+
+    const result: ObservedDayExtremes = {
+      date,
+      maxF,
+      minF,
+      fetchedAt: new Date(),
+    };
+
+    this.observationCache.set(cacheKey, result);
+    return result;
+  }
+
+  /**
+   * IANA timezone for a city's settlement station (cached).
+   */
+  async getStationTimezone(stationId: string): Promise<string> {
+    return this.fetchStationTimezone(stationId);
+  }
+
+  /**
+   * Local calendar date (YYYY-MM-DD) at a city's settlement station.
+   */
+  async getLocalCalendarDate(city: CityConfig, now?: Date): Promise<string> {
+    const timeZone = await this.fetchStationTimezone(city.nwsStation);
+    const current = now ?? new Date();
+    return current.toLocaleDateString("en-CA", { timeZone });
+  }
+
+  /**
    * Force refresh forecasts for a city (bypasses cache).
    */
   async refreshForecast(city: CityConfig): Promise<CityForecast> {
@@ -145,6 +234,8 @@ export class NWSClient {
   clearCache(): void {
     this.gridPointCache.clear();
     this.forecastCache.clear();
+    this.stationTimezoneCache.clear();
+    this.observationCache.clear();
   }
 
   /**
@@ -165,6 +256,61 @@ export class NWSClient {
   }
 
   // ─── Private Methods ──────────────────────────────────────────────────────
+
+  private async fetchStationTimezone(stationId: string): Promise<string> {
+    const cached = this.stationTimezoneCache.get(stationId);
+    if (cached) return cached;
+
+    const url = `${NWS_BASE_URL}/stations/${stationId}`;
+    const data = await this.fetchJson<NWSStationResponse>(url);
+    const timeZone = data.properties.timeZone;
+    this.stationTimezoneCache.set(stationId, timeZone);
+    return timeZone;
+  }
+
+  private getLocalDayBounds(
+    date: string,
+    timeZone: string,
+  ): { start: string; end: string } {
+    const [year, month, day] = date.split("-").map(Number);
+    const utcMidnight = Date.UTC(year!, month! - 1, day!);
+    const offsetMs = this.getTimeZoneOffsetMs(new Date(utcMidnight), timeZone);
+    const startMs = utcMidnight - offsetMs;
+    const endMs = startMs + 24 * 60 * 60 * 1000 - 1;
+
+    return {
+      start: new Date(startMs).toISOString(),
+      end: new Date(endMs).toISOString(),
+    };
+  }
+
+  private getTimeZoneOffsetMs(date: Date, timeZone: string): number {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      timeZoneName: "shortOffset",
+    }).formatToParts(date);
+    const tzName = parts.find((p) => p.type === "timeZoneName")?.value ?? "GMT";
+    const match = tzName.match(/GMT([+-]\d{1,2})(?::(\d{2}))?/);
+    if (!match) return 0;
+    const hours = Number(match[1]);
+    const minutes = match[2] ? Number(match[2]) : 0;
+    return (hours * 60 + Math.sign(hours) * minutes) * 60 * 1000;
+  }
+
+  private observationLocalDate(isoTimestamp: string, timeZone: string): string {
+    return new Date(isoTimestamp).toLocaleDateString("en-CA", { timeZone });
+  }
+
+  private observationTempF(
+    temperature: NWSObservationFeature["properties"]["temperature"],
+  ): number | null {
+    if (!temperature || temperature.value === null) return null;
+
+    if (temperature.unitCode.includes("degC")) {
+      return temperature.value * 9 / 5 + 32;
+    }
+    return temperature.value;
+  }
 
   private isCacheStale(forecast: CityForecast): boolean {
     return Date.now() - forecast.lastRefreshed.getTime() > FORECAST_CACHE_TTL_MS;
