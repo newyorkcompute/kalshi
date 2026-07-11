@@ -1,6 +1,5 @@
 ---
 "@newyorkcompute/kalshi-core": minor
-"@newyorkcompute/kalshi-mm": minor
 ---
 
 Mark-to-market risk controls and settlement sync
