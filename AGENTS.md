@@ -6,4 +6,8 @@ Give each subagent a clear goal, the relevant context, and what to bring back. D
 
 When they return, review the results before you merge anything. If something's off, rewrite the brief and spin another, don't silently patch over it yourself unless it's trivial.
 
-When opening a PR, follow `.github/PULL_REQUEST_TEMPLATE.md`.
+## Pull Requests
+
+When opening a PR, follow `.github/PULL_REQUEST_TEMPLATE.md` section-by-section. Prefer `gh pr create --body-file` so the template is used. Mention skipped verification in the Testing section and leave related checkboxes unchecked.
+
+Always run `npm run ci` before opening a PR. Fix failures first; do not open a PR with known CI failures.
