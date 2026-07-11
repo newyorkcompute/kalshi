@@ -4,7 +4,7 @@ Weather-informed market-making daemon for Kalshi prediction markets.
 
 ## Validation Run
 
-The checked-in `config.yaml` is tuned for a **2–3 week validation run** at tiny size. Do not increase limits until go/no-go criteria are met.
+[`config.example-validation-run.yaml`](./config.example-validation-run.yaml) is tuned for a **2–3 week validation run** at tiny size — copy it to `config.yaml` (gitignored) to use it. Do not increase limits until go/no-go criteria are met.
 
 ### Starting the bot
 
