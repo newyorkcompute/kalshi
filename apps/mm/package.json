@@ -26,7 +26,8 @@
     "lint:fix": "eslint src/ --fix",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "analyze": "tsx scripts/analyze-performance.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.14.1",
