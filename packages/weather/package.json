@@ -1,6 +1,6 @@
 {
   "name": "@newyorkcompute/kalshi-weather",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Weather intelligence for Kalshi prediction markets — NWS forecast integration, probability model, and fair value calculation",
   "author": "NewYorkCompute",
   "license": "MIT",
