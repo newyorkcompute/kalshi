@@ -22,6 +22,15 @@ import {
   type EdgeOpportunity,
 } from "@newyorkcompute/kalshi-weather";
 import type { WeatherService } from "../weather/weather-service.js";
+import {
+  fetchWithRetry,
+  PAGE_REQUEST_TIMEOUT_MS,
+} from "./fetch-with-retry.js";
+
+export interface WeatherMarketFetchResult {
+  markets: Market[];
+  partial: boolean;
+}
 
 export interface WeatherScannerConfig {
   /** Minimum edge in cents to include a market (default 3) */
@@ -61,6 +70,8 @@ export interface WeatherScanResult {
   marketsWithEdge: number;
   /** When this scan was performed */
   timestamp: Date;
+  /** True when pagination aborted early (incomplete market list) */
+  partial: boolean;
 }
 
 /** Select top N markets by absolute edge (descending). */
@@ -101,8 +112,15 @@ export class WeatherScanner {
     console.log("[WeatherScanner] Scanning for weather markets...");
 
     // Step 1: Fetch all open weather markets from Kalshi
-    const weatherMarkets = await this.fetchWeatherMarkets();
-    console.log(`[WeatherScanner] Found ${weatherMarkets.length} open weather markets`);
+    const { markets: weatherMarkets, partial } = await this.fetchWeatherMarkets();
+    if (partial) {
+      console.warn(
+        `[WeatherScanner] WARNING: PARTIAL market fetch — using ${weatherMarkets.length} ` +
+        "weather markets from incomplete pagination",
+      );
+    } else {
+      console.log(`[WeatherScanner] Found ${weatherMarkets.length} open weather markets`);
+    }
 
     // Step 2: Register tickers with the weather service so it can fetch forecasts
     for (const market of weatherMarkets) {
@@ -180,6 +198,7 @@ export class WeatherScanner {
       marketsWithFairValue,
       marketsWithEdge: limited.length,
       timestamp: new Date(),
+      partial,
     };
 
     this.lastResult = result;
@@ -252,33 +271,39 @@ export class WeatherScanner {
    * Fetch all open weather markets from Kalshi.
    * Uses pagination to get all results.
    */
-  private async fetchWeatherMarkets(): Promise<Market[]> {
+  private async fetchWeatherMarkets(): Promise<WeatherMarketFetchResult> {
     const allMarkets: Market[] = [];
     let cursor: string | undefined = undefined;
+    let pageNumber = 0;
 
     // Kalshi API doesn't support direct filtering by ticker prefix,
     // so we fetch open markets and filter client-side.
     // In practice, weather markets are a small subset.
-    try {
-      do {
-        const response = await this.marketApi.getMarkets(
-          1000,          // limit (max)
-          cursor,        // cursor
-          undefined,     // eventTicker
-          undefined,     // seriesTicker
-          undefined,     // minCreatedTs
-          undefined,     // maxCreatedTs
-          undefined,     // maxCloseTs
-          undefined,     // minCloseTs
-          undefined,     // minSettledTs
-          undefined,     // maxSettledTs
-          GetMarketsStatusEnum.Open, // status
-          undefined,     // tickers
+    do {
+      pageNumber++;
+      try {
+        const response = await fetchWithRetry(() =>
+          this.marketApi.getMarkets(
+            1000,          // limit (max)
+            cursor,        // cursor
+            undefined,     // eventTicker
+            undefined,     // seriesTicker
+            undefined,     // minCreatedTs
+            undefined,     // maxCreatedTs
+            undefined,     // maxCloseTs
+            undefined,     // minCloseTs
+            undefined,     // minSettledTs
+            undefined,     // maxSettledTs
+            GetMarketsStatusEnum.Open, // status
+            undefined,     // tickers
+            undefined,     // mveFilter
+            { timeout: PAGE_REQUEST_TIMEOUT_MS },
+          ),
         );
 
         const markets = response.data?.markets ?? [];
         const weatherBatch = markets.filter(m =>
-          m.ticker && isWeatherTicker(m.ticker)
+          m.ticker && isWeatherTicker(m.ticker),
         );
 
         allMarkets.push(...weatherBatch);
@@ -289,12 +314,25 @@ export class WeatherScanner {
         if (!cursor || markets.length === 0 || allMarkets.length >= 500) {
           break;
         }
-      } while (cursor);
-    } catch (error) {
-      console.error("[WeatherScanner] Failed to fetch markets:", error);
-    }
+      } catch (error) {
+        if (allMarkets.length === 0) {
+          console.error(
+            "[WeatherScanner] Market fetch FAILED on first page after retries:",
+            error,
+          );
+          throw error;
+        }
 
-    return allMarkets;
+        console.warn(
+          `[WeatherScanner] WARNING: PARTIAL market fetch — pagination failed on page ` +
+          `${pageNumber} after retries. Returning ${allMarkets.length} weather markets.`,
+          error,
+        );
+        return { markets: allMarkets, partial: true };
+      }
+    } while (cursor);
+
+    return { markets: allMarkets, partial: false };
   }
 }
 
@@ -302,8 +340,9 @@ export class WeatherScanner {
  * Format weather scan results for display.
  */
 export function formatWeatherScanResults(result: WeatherScanResult): string {
+  const partialTag = result.partial ? " (PARTIAL)" : "";
   const lines = [
-    `\n🌡️ ─── WEATHER SCAN RESULTS ────────────────────`,
+    `\n🌡️ ─── WEATHER SCAN RESULTS${partialTag} ────────────────────`,
     `  Total weather markets: ${result.totalWeatherMarkets}`,
     `  Markets with fair value: ${result.marketsWithFairValue}`,
     `  Markets with edge: ${result.marketsWithEdge}`,
