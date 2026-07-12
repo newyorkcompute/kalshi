@@ -1623,14 +1623,20 @@ export class Bot {
       }
     }
 
-    // Remove weather markets that no longer have edge (but keep non-weather markets)
-    for (const ticker of Array.from(this.activeMarkets)) {
-      if (isWeatherTicker(ticker) && !newTickers.has(ticker) && !this.pinnedMarkets.has(ticker)) {
-        // Don't remove if we have an open position
-        const pos = this.inventory.getPosition(ticker);
-        if (pos && pos.netExposure !== 0) continue;
-        await this.removeMarket(ticker);
+    // Remove weather markets that no longer have edge (but keep non-weather markets).
+    // Skip removal on partial scans — the market list is not exhaustive.
+    if (!result.partial) {
+      for (const ticker of Array.from(this.activeMarkets)) {
+        if (isWeatherTicker(ticker) && !newTickers.has(ticker) && !this.pinnedMarkets.has(ticker)) {
+          // Don't remove if we have an open position
+          const pos = this.inventory.getPosition(ticker);
+          if (pos && pos.netExposure !== 0) continue;
+          await this.removeMarket(ticker);
+        }
       }
+    } else {
+      console.log("[Bot] ⚠️ Partial weather scan — skipping market removal");
+      this.logToFile("Partial weather scan, skipping market removal");
     }
 
     // Update weather service with new tickers
@@ -1790,8 +1796,9 @@ export class Bot {
   }
 
   private formatWeatherScanLogLine(result: WeatherScanResult, minEdgeCents: number): string {
+    const partialTag = result.partial ? " (PARTIAL)" : "";
     const summary =
-      `Weather scan: ${result.totalWeatherMarkets} total, ` +
+      `Weather scan${partialTag}: ${result.totalWeatherMarkets} total, ` +
       `${result.marketsWithFairValue} with fair values, ` +
       `${result.marketsWithEdge} with edge >= ${minEdgeCents}c`;
 
