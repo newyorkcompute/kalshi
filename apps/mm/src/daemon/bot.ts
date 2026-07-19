@@ -22,6 +22,12 @@ import {
 import type { MarketApi, PortfolioApi, Market } from "kalshi-typescript";
 import { appendFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
+import {
+  normalizeFill,
+  normalizeMarketPosition,
+  isFiniteQuoteField,
+  type RawFillData,
+} from "./normalize-fill.js";
 
 /** Log with tag prefix (timestamp is auto-prepended by patched console) */
 function log(tag: string, message: string): void {
@@ -70,20 +76,7 @@ function tickerPriceCents(
 }
 
 /** Fill data from WebSocket (inner msg) */
-interface FillData {
-  trade_id?: string;
-  fill_id?: string;
-  order_id: string;
-  market_ticker: string;
-  ticker?: string;  // Alternative field name
-  side: "yes" | "no";
-  action: "buy" | "sell";
-  count: number;
-  yes_price: number;
-  no_price: number;
-  created_time: string;
-  is_taker?: boolean;
-}
+type FillData = RawFillData & { order_id: string };
 
 import type { Config } from "../config.js";
 import { getKalshiCredentials, getBasePath } from "../config.js";
@@ -1011,29 +1004,34 @@ export class Bot {
       );
 
       // Initialize inventory with existing positions
-      const portfolioData = relevantPositions.map(p => ({
-        ticker: p.ticker,
-        yesContracts: p.position > 0 ? Math.abs(p.position) : 0,
-        noContracts: p.position < 0 ? Math.abs(p.position) : 0,
-        costBasis: Math.abs(p.market_exposure), // Use exposure as approximate cost
-      }));
+      const portfolioData = relevantPositions.map((p) => {
+        const norm = normalizeMarketPosition(p);
+        return {
+          ticker: norm.ticker,
+          yesContracts: norm.position > 0 ? Math.abs(norm.position) : 0,
+          noContracts: norm.position < 0 ? Math.abs(norm.position) : 0,
+          costBasis: norm.exposureCents,
+        };
+      });
 
       this.inventory.initializeFromPortfolio(portfolioData);
 
       // Log synced positions
       log("Bot", `✅ Synced ${relevantPositions.length} positions:`);
       for (const p of relevantPositions) {
-        const pos = p.position;
+        const norm = normalizeMarketPosition(p);
+        const pos = norm.position;
         const side = pos > 0 ? "YES" : "NO";
-        const exposure = (p.market_exposure / 100).toFixed(2);
+        const exposure = (norm.exposureCents / 100).toFixed(2);
         console.log(`   ${p.ticker}: ${Math.abs(pos)} ${side} ($${exposure} exposure)`);
         this.logToFile(`Position sync: ${p.ticker} ${Math.abs(pos)} ${side}`);
       }
 
       // Also log any positions in OTHER markets (warning)
-      const otherPositions = positions.filter(p =>
-        !this.activeMarkets.has(p.ticker) && p.position !== 0
-      );
+      const otherPositions = positions.filter((p) => {
+        const norm = normalizeMarketPosition(p);
+        return !this.activeMarkets.has(p.ticker) && norm.position !== 0;
+      });
       if (otherPositions.length > 0) {
         log("Bot", `⚠️ You have ${otherPositions.length} positions in OTHER markets (not managed by this bot)`);
       }
@@ -1219,16 +1217,37 @@ export class Bot {
   }
 
   private async onFill(data: FillData): Promise<void> {
-    // Get price based on side (yes_price for YES, no_price for NO)
-    const price = data.side === "yes" ? data.yes_price : data.no_price;
-    const ticker = data.market_ticker || data.ticker || "";
-    
+    const normalized = normalizeFill(data);
+    if (!normalized) {
+      console.error(
+        "[Bot] ❌ Invalid fill payload — skipping inventory/quote update:",
+        JSON.stringify({
+          order_id: data.order_id,
+          market_ticker: data.market_ticker ?? data.ticker,
+          side: data.side,
+          action: data.action,
+          count: data.count,
+          count_fp: data.count_fp,
+          yes_price: data.yes_price,
+          yes_price_dollars: data.yes_price_dollars,
+          no_price: data.no_price,
+          no_price_dollars: data.no_price_dollars,
+        })
+      );
+      this.logToFile(
+        `Invalid fill skipped: order=${data.order_id} ticker=${data.market_ticker ?? data.ticker ?? "?"}`
+      );
+      return;
+    }
+
+    const { ticker, count, priceCents: price } = normalized;
+
     const fill = {
-      orderId: data.order_id,
+      orderId: normalized.orderId,
       ticker,
-      side: data.side,
-      action: data.action,
-      count: data.count,
+      side: normalized.side,
+      action: normalized.action,
+      count,
       price,
       timestamp: new Date(),
     };
@@ -1236,7 +1255,7 @@ export class Bot {
     // === P0: LINK FILL TO ORDER STATUS ===
     // Update order manager so we know which orders are filled/partial
     if (this.orderManager) {
-      const updated = this.orderManager.onFill(data.order_id, data.count);
+      const updated = this.orderManager.onFill(data.order_id, count);
       if (!updated) {
         // Order not found - could be from previous session or external
         console.log(`[Bot] ℹ️ Fill for untracked order ${data.order_id.slice(0, 8)}...`);
@@ -1249,8 +1268,8 @@ export class Bot {
     
     const fillRecord: FillRecord = {
       ticker,
-      side: data.side,
-      action: data.action,
+      side: normalized.side,
+      action: normalized.action,
       price,
       timestamp: Date.now(),
     };
@@ -1270,13 +1289,13 @@ export class Bot {
     const realizedFromFill = pnlAfter.realizedToday - pnlBefore.realizedToday;
 
     // Format fill log with emoji and details
-    const emoji = data.action === "buy" ? "🟢" : "🔴";
-    const cost = data.count * price;
+    const emoji = normalized.action === "buy" ? "🟢" : "🔴";
+    const cost = count * price;
     const netPos = positionAfter?.netExposure ?? 0;
     const posDir = netPos > 0 ? "LONG" : netPos < 0 ? "SHORT" : "FLAT";
 
     console.log(
-      `\n${emoji} FILL: ${data.action.toUpperCase()} ${data.count}x ${data.side.toUpperCase()} @ ${price}¢`
+      `\n${emoji} FILL: ${normalized.action.toUpperCase()} ${count}x ${normalized.side.toUpperCase()} @ ${price}¢`
     );
     console.log(`         Market: ${ticker}`);
     console.log(`         Cost: ${cost}¢ ($${(cost / 100).toFixed(2)})`);
@@ -1290,10 +1309,10 @@ export class Bot {
     console.log(`         📊 Session: ${pnlAfter.fillsToday} fills, ${pnlAfter.volumeToday} contracts, P&L: ${pnlAfter.realizedToday > 0 ? "+" : ""}${pnlAfter.realizedToday}¢\n`);
 
     // Log to file
-    this.logFillToFile(data, realizedFromFill, pnlAfter.realizedToday);
+    this.logFillToFile(data, count, price, realizedFromFill, pnlAfter.realizedToday);
 
     // Compliance audit log
-    this.auditLogger?.logFill(ticker, data.side, data.action, price, data.count, realizedFromFill);
+    this.auditLogger?.logFill(ticker, normalized.side, normalized.action, price, count, realizedFromFill);
 
     // Track per-market P&L
     const mktPnl = this.marketPnL.get(ticker) ?? { realized: 0, fills: 0, addedAt: Date.now() };
@@ -1339,6 +1358,13 @@ export class Bot {
 
     const data = this.marketData.get(ticker);
     if (!data) return;
+
+    if (
+      !isFiniteQuoteField(data.bestBid) ||
+      !isFiniteQuoteField(data.bestAsk)
+    ) {
+      return;
+    }
 
     // ─── EARLY EXIT: Skip quoting when at or over max exposure ───
     // This prevents computing quotes, sending them to risk, and logging
@@ -1466,6 +1492,18 @@ export class Bot {
         bidSize: quote.bidSize === 0 ? 0 : Math.max(complianceMinSize, Math.min(maxOrderSize, Math.max(1, Math.floor(quote.bidSize * positionMultiplier)))),
         askSize: quote.askSize === 0 ? 0 : Math.max(complianceMinSize, Math.min(maxOrderSize, Math.max(1, Math.floor(quote.askSize * positionMultiplier)))),
       };
+
+      if (
+        !isFiniteQuoteField(scaledQuote.bidPrice) ||
+        !isFiniteQuoteField(scaledQuote.askPrice) ||
+        !isFiniteQuoteField(scaledQuote.bidSize) ||
+        !isFiniteQuoteField(scaledQuote.askSize)
+      ) {
+        console.error(
+          `[Bot] ⚠️ Skipping invalid quote (non-finite values) for ${scaledQuote.ticker}`
+        );
+        continue;
+      }
       
       // QUOTE CACHING: Skip API call if quote is identical to last sent
       const lastQuote = this.lastSentQuote.get(scaledQuote.ticker);
@@ -1857,10 +1895,15 @@ export class Bot {
   /**
    * Log a fill to file (plain text + JSONL structured)
    */
-  private logFillToFile(data: FillData, realizedPnL: number, sessionPnL: number): void {
+  private logFillToFile(
+    data: FillData,
+    count: number,
+    price: number,
+    realizedPnL: number,
+    sessionPnL: number
+  ): void {
     const ticker = data.market_ticker || data.ticker || "";
-    const price = data.side === "yes" ? data.yes_price : data.no_price;
-    const msg = `FILL: ${data.action} ${data.count}x ${data.side} ${ticker} @ ${price}¢ | Realized: ${realizedPnL}¢ | Session P&L: ${sessionPnL}¢`;
+    const msg = `FILL: ${data.action} ${count}x ${data.side} ${ticker} @ ${price}¢ | Realized: ${realizedPnL}¢ | Session P&L: ${sessionPnL}¢`;
     this.logToFile(msg);
 
     // Structured JSONL for post-analysis
@@ -1871,7 +1914,7 @@ export class Bot {
       ticker,
       action: data.action,
       side: data.side,
-      count: data.count,
+      count,
       price,
       isTaker: data.is_taker ?? false,
       realizedPnL,
