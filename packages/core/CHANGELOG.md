@@ -1,5 +1,11 @@
 # @newyorkcompute/kalshi-core
 
+## 0.8.1
+
+### Patch Changes
+
+- [#122](https://github.com/newyorkcompute/kalshi/pull/122) [`c4797b5`](https://github.com/newyorkcompute/kalshi/commit/c4797b5ecaeef139a36b41e9c8376bb140cadbc7) Thanks [@siddharthkul](https://github.com/siddharthkul)! - Support dollar fixed-point WebSocket orderbooks and migrate order writes to Create Order V2 for deci_cent markets
+
 ## 0.8.0
 
 ### Minor Changes
