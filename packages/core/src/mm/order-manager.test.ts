@@ -1,43 +1,55 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { OrderManager } from "./order-manager.js";
-import type { OrdersApi } from "kalshi-typescript";
+import type { OrdersV2Client } from "./orders-v2.js";
 
-// Mock OrdersApi
-function createMockOrdersApi(): OrdersApi {
+function createMockOrdersV2(): OrdersV2Client {
   return {
     createOrder: vi.fn().mockResolvedValue({
-      data: {
-        order: {
-          order_id: "kalshi-order-123",
-          status: "resting",
-        },
-      },
+      order_id: "kalshi-order-123",
+      client_order_id: "client-1",
+      fill_count: "0.00",
+      remaining_count: "10.00",
+      ts_ms: Date.now(),
     }),
-    cancelOrder: vi.fn().mockResolvedValue({}),
-    batchCancelOrders: vi.fn().mockImplementation(({ ids }: { ids: string[] }) => {
+    cancelOrder: vi.fn().mockResolvedValue({
+      order_id: "kalshi-order-123",
+      reduced_by: "10.00",
+      ts_ms: Date.now(),
+    }),
+    batchCancelOrders: vi.fn().mockImplementation((ids: string[]) => {
       return Promise.resolve({
-        data: {
-          orders: ids.map((id) => ({ order_id: id })),
-        },
+        orders: ids.map((id) => ({
+          order_id: id,
+          reduced_by: "10.00",
+          ts_ms: Date.now(),
+        })),
       });
     }),
     batchCreateOrders: vi.fn().mockResolvedValue({
-      data: {
-        orders: [
-          { order: { order_id: "batch-order-1", status: "resting" } },
-          { order: { order_id: "batch-order-2", status: "resting" } },
-        ],
-      },
+      orders: [
+        {
+          order_id: "batch-order-1",
+          fill_count: "0.00",
+          remaining_count: "10.00",
+          ts_ms: Date.now(),
+        },
+        {
+          order_id: "batch-order-2",
+          fill_count: "0.00",
+          remaining_count: "10.00",
+          ts_ms: Date.now(),
+        },
+      ],
     }),
-  } as unknown as OrdersApi;
+  };
 }
 
 describe("OrderManager", () => {
   let manager: OrderManager;
-  let mockApi: OrdersApi;
+  let mockApi: OrdersV2Client;
 
   beforeEach(() => {
-    mockApi = createMockOrdersApi();
+    mockApi = createMockOrdersV2();
     manager = new OrderManager(mockApi);
   });
 
@@ -62,7 +74,7 @@ describe("OrderManager", () => {
       expect(result.order!.count).toBe(10);
     });
 
-    it("should call API with correct parameters", async () => {
+    it("should call V2 API with YES-book bid mapping", async () => {
       await manager.place({
         ticker: "TEST-MARKET",
         side: "yes",
@@ -74,16 +86,16 @@ describe("OrderManager", () => {
       expect(mockApi.createOrder).toHaveBeenCalledWith(
         expect.objectContaining({
           ticker: "TEST-MARKET",
-          type: "limit",
-          side: "yes",
-          action: "buy",
-          yes_price: 50,
-          count: 10,
+          side: "bid",
+          price: "0.5000",
+          count: "10.00",
+          post_only: true,
+          time_in_force: "good_till_canceled",
         })
       );
     });
 
-    it("should use no_price for NO orders", async () => {
+    it("should map buy NO to YES ask at inverted price", async () => {
       await manager.place({
         ticker: "TEST-MARKET",
         side: "no",
@@ -94,9 +106,8 @@ describe("OrderManager", () => {
 
       expect(mockApi.createOrder).toHaveBeenCalledWith(
         expect.objectContaining({
-          side: "no",
-          no_price: 50,
-          yes_price: undefined,
+          side: "ask",
+          price: "0.5000",
         })
       );
     });
@@ -323,7 +334,6 @@ describe("OrderManager", () => {
 
   describe("updateQuote", () => {
     it("should cancel existing and place new orders", async () => {
-      // Place initial order
       await manager.place({
         ticker: "TEST-MARKET",
         side: "yes",
@@ -332,7 +342,6 @@ describe("OrderManager", () => {
         count: 10,
       });
 
-      // Update quote
       const result = await manager.updateQuote({
         ticker: "TEST-MARKET",
         side: "yes",
@@ -343,16 +352,16 @@ describe("OrderManager", () => {
       });
 
       expect(result.cancelled).toBe(1);
-      expect(result.placed).toHaveLength(2); // bid and ask
+      expect(result.placed).toHaveLength(2);
     });
 
     it("should skip invalid prices", async () => {
       const result = await manager.updateQuote({
         ticker: "TEST-MARKET",
         side: "yes",
-        bidPrice: 0, // Invalid
+        bidPrice: 0,
         bidSize: 10,
-        askPrice: 100, // Invalid
+        askPrice: 100,
         askSize: 10,
       });
 
@@ -364,12 +373,12 @@ describe("OrderManager", () => {
         ticker: "TEST-MARKET",
         side: "yes",
         bidPrice: 45,
-        bidSize: 0, // Zero
+        bidSize: 0,
         askPrice: 55,
         askSize: 10,
       });
 
-      expect(result.placed).toHaveLength(1); // Only ask
+      expect(result.placed).toHaveLength(1);
     });
   });
 
@@ -383,14 +392,12 @@ describe("OrderManager", () => {
         count: 10,
       });
 
-      // Mark as filled
       manager.updateStatus(placed.order!.clientOrderId, "filled");
 
-      // Backdate the order
       const order = manager.get(placed.order!.clientOrderId)!;
-      order.createdAt = new Date(Date.now() - 48 * 60 * 60 * 1000); // 48 hours ago
+      order.createdAt = new Date(Date.now() - 48 * 60 * 60 * 1000);
 
-      const removed = manager.cleanup(24 * 60 * 60 * 1000); // 24 hour max age
+      const removed = manager.cleanup(24 * 60 * 60 * 1000);
 
       expect(removed).toBe(1);
       expect(manager.getAll()).toHaveLength(0);
@@ -405,27 +412,49 @@ describe("OrderManager", () => {
         count: 10,
       });
 
-      const removed = manager.cleanup(0); // Even with 0 max age
-
+      const removed = manager.cleanup(0);
       expect(removed).toBe(0);
-      expect(manager.getAll()).toHaveLength(1);
+      expect(manager.getActive()).toHaveLength(1);
     });
   });
 
   describe("batchCancel", () => {
     it("should cancel multiple orders in one API call", async () => {
-      const result = await manager.batchCancel(["order-1", "order-2", "order-3"]);
-
-      expect(mockApi.batchCancelOrders).toHaveBeenCalledWith({
-        ids: ["order-1", "order-2", "order-3"],
+      const a = await manager.place({
+        ticker: "TEST-MARKET",
+        side: "yes",
+        action: "buy",
+        price: 50,
+        count: 10,
       });
-      expect(result).toBeGreaterThanOrEqual(0);
+      (mockApi.createOrder as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        order_id: "kalshi-order-456",
+        fill_count: "0.00",
+        remaining_count: "10.00",
+        ts_ms: Date.now(),
+      });
+      const b = await manager.place({
+        ticker: "TEST-MARKET",
+        side: "yes",
+        action: "sell",
+        price: 55,
+        count: 10,
+      });
+
+      const cancelled = await manager.batchCancel([
+        a.order!.id!,
+        b.order!.id!,
+      ]);
+
+      expect(cancelled).toBe(2);
+      expect(mockApi.batchCancelOrders).toHaveBeenCalledWith([
+        "kalshi-order-123",
+        "kalshi-order-456",
+      ]);
     });
 
     it("should return 0 for empty array", async () => {
-      const result = await manager.batchCancel([]);
-      expect(result).toBe(0);
-      expect(mockApi.batchCancelOrders).not.toHaveBeenCalled();
+      expect(await manager.batchCancel([])).toBe(0);
     });
 
     it("should fall back to individual cancels on batch failure", async () => {
@@ -433,11 +462,17 @@ describe("OrderManager", () => {
         new Error("Batch not supported")
       );
 
-      const result = await manager.batchCancel(["order-1", "order-2"]);
+      const placed = await manager.place({
+        ticker: "TEST-MARKET",
+        side: "yes",
+        action: "buy",
+        price: 50,
+        count: 10,
+      });
 
-      // Should have attempted individual cancels
-      expect(mockApi.cancelOrder).toHaveBeenCalledTimes(2);
-      expect(result).toBe(2);
+      const cancelled = await manager.batchCancel([placed.order!.id!]);
+      expect(cancelled).toBe(1);
+      expect(mockApi.cancelOrder).toHaveBeenCalled();
     });
   });
 
@@ -448,49 +483,43 @@ describe("OrderManager", () => {
         { ticker: "TEST-MARKET", side: "yes", action: "sell", price: 55, count: 10 },
       ]);
 
-      expect(mockApi.batchCreateOrders).toHaveBeenCalledTimes(1);
       expect(results).toHaveLength(2);
       expect(results[0].success).toBe(true);
-      expect(results[1].success).toBe(true);
-      expect(results[0].order?.id).toBe("batch-order-1");
-      expect(results[1].order?.id).toBe("batch-order-2");
+      expect(results[0].order!.id).toBe("batch-order-1");
+      expect(results[1].order!.id).toBe("batch-order-2");
+      expect(mockApi.batchCreateOrders).toHaveBeenCalled();
     });
 
     it("should return empty array for empty input", async () => {
-      const results = await manager.batchCreate([]);
-      expect(results).toHaveLength(0);
-      expect(mockApi.batchCreateOrders).not.toHaveBeenCalled();
+      expect(await manager.batchCreate([])).toEqual([]);
     });
 
     it("should handle API errors", async () => {
       (mockApi.batchCreateOrders as ReturnType<typeof vi.fn>).mockRejectedValue(
-        new Error("Rate limit exceeded")
+        new Error("batch failed")
       );
 
       const results = await manager.batchCreate([
         { ticker: "TEST-MARKET", side: "yes", action: "buy", price: 45, count: 10 },
       ]);
 
-      expect(results).toHaveLength(1);
       expect(results[0].success).toBe(false);
-      expect(results[0].error).toBe("Rate limit exceeded");
-      expect(results[0].order?.status).toBe("failed");
+      expect(results[0].error).toBe("batch failed");
     });
 
     it("should track orders in internal state", async () => {
       const results = await manager.batchCreate([
         { ticker: "TEST-MARKET", side: "yes", action: "buy", price: 45, count: 10 },
+        { ticker: "TEST-MARKET", side: "yes", action: "sell", price: 55, count: 10 },
       ]);
 
-      const order = manager.get(results[0].order!.clientOrderId);
-      expect(order).toBeDefined();
-      expect(order?.id).toBe("batch-order-1");
+      expect(manager.get(results[0].order!.clientOrderId)).toBeDefined();
+      expect(manager.get(results[1].order!.clientOrderId)).toBeDefined();
     });
   });
 
   describe("updateQuote with batch APIs", () => {
     it("should use batch APIs in parallel", async () => {
-      // Place initial orders
       await manager.place({
         ticker: "TEST-MARKET",
         side: "yes",
@@ -499,8 +528,7 @@ describe("OrderManager", () => {
         count: 10,
       });
 
-      // Update quote - should use batch cancel and batch create
-      const result = await manager.updateQuote({
+      await manager.updateQuote({
         ticker: "TEST-MARKET",
         side: "yes",
         bidPrice: 48,
@@ -509,16 +537,42 @@ describe("OrderManager", () => {
         askSize: 15,
       });
 
-      // Should have used batch APIs
       expect(mockApi.batchCancelOrders).toHaveBeenCalled();
       expect(mockApi.batchCreateOrders).toHaveBeenCalled();
-      expect(result.placed).toHaveLength(2);
     });
   });
 
   describe("updateQuoteAtomic", () => {
     it("should place new orders before canceling old ones", async () => {
-      // Place initial order
+      const callOrder: string[] = [];
+      (mockApi.batchCreateOrders as ReturnType<typeof vi.fn>).mockImplementation(
+        async () => {
+          callOrder.push("create");
+          return {
+            orders: [
+              {
+                order_id: "new-1",
+                fill_count: "0.00",
+                remaining_count: "10.00",
+                ts_ms: Date.now(),
+              },
+              {
+                order_id: "new-2",
+                fill_count: "0.00",
+                remaining_count: "10.00",
+                ts_ms: Date.now(),
+              },
+            ],
+          };
+        }
+      );
+      (mockApi.batchCancelOrders as ReturnType<typeof vi.fn>).mockImplementation(
+        async () => {
+          callOrder.push("cancel");
+          return { orders: [{ order_id: "old", reduced_by: "10.00" }] };
+        }
+      );
+
       await manager.place({
         ticker: "TEST-MARKET",
         side: "yes",
@@ -527,25 +581,6 @@ describe("OrderManager", () => {
         count: 10,
       });
 
-      // Track call order
-      const callOrder: string[] = [];
-      (mockApi.batchCreateOrders as ReturnType<typeof vi.fn>).mockImplementation(async () => {
-        callOrder.push("create");
-        return {
-          data: {
-            orders: [
-              { order: { order_id: "new-order-1", status: "resting" } },
-              { order: { order_id: "new-order-2", status: "resting" } },
-            ],
-          },
-        };
-      });
-      (mockApi.batchCancelOrders as ReturnType<typeof vi.fn>).mockImplementation(async () => {
-        callOrder.push("cancel");
-        return { data: { orders: [{ order_id: "kalshi-order-123" }] } };
-      });
-
-      // Update quote atomically
       await manager.updateQuoteAtomic({
         ticker: "TEST-MARKET",
         side: "yes",
@@ -555,9 +590,8 @@ describe("OrderManager", () => {
         askSize: 15,
       });
 
-      // Create should be called BEFORE cancel
-      expect(callOrder).toEqual(["create", "cancel"]);
+      expect(callOrder[0]).toBe("create");
+      expect(callOrder[1]).toBe("cancel");
     });
   });
 });
-

@@ -10,6 +10,7 @@ import {
   RiskManager,
   KalshiWsClient,
   createOrdersApi,
+  createOrdersV2Client,
   createMarketApi,
   createPortfolioApi,
   OrderbookManager,
@@ -39,13 +40,33 @@ interface MarketMetadata {
 /** Ticker data from WebSocket (inner msg) */
 interface TickerData {
   market_ticker: string;
-  yes_bid: number;
-  yes_ask: number;
-  no_bid: number;
-  no_ask: number;
+  yes_bid?: number;
+  yes_ask?: number;
+  no_bid?: number;
+  no_ask?: number;
+  yes_bid_dollars?: string | number;
+  yes_ask_dollars?: string | number;
+  no_bid_dollars?: string | number;
+  no_ask_dollars?: string | number;
   last_price: number;
   volume: number;
   open_interest: number;
+}
+
+function tickerDollarsToCents(value: string | number | undefined): number {
+  if (value === undefined) return 0;
+  const parsed = typeof value === "string" ? parseFloat(value) : value;
+  if (!Number.isFinite(parsed) || parsed === 0) return 0;
+  if (parsed > 0 && parsed < 1) return Math.round(parsed * 100);
+  return Math.round(parsed);
+}
+
+function tickerPriceCents(
+  cents: number | undefined,
+  dollars: string | number | undefined
+): number {
+  if (cents != null && cents !== 0) return cents;
+  return tickerDollarsToCents(dollars);
 }
 
 /** Fill data from WebSocket (inner msg) */
@@ -331,7 +352,10 @@ export class Bot {
       this.ordersApi = createOrdersApi(apiConfig);
       this.marketApi = createMarketApi(apiConfig);
       this.portfolioApi = createPortfolioApi(apiConfig);
-      this.orderManager = new OrderManager(this.ordersApi);
+      this.orderManager = new OrderManager(
+        createOrdersV2Client(apiConfig),
+        this.ordersApi
+      );
 
       // === SCANNER: Initial scan if enabled ===
       if (this.scannerEnabled) {
@@ -1173,8 +1197,8 @@ export class Bot {
     // Skip if paused or halted
     if (this.paused || this.risk.shouldHalt()) return;
 
-    const bestBid = data.yes_bid ?? 0;
-    const bestAsk = data.yes_ask ?? 0;
+    const bestBid = tickerPriceCents(data.yes_bid, data.yes_bid_dollars);
+    const bestAsk = tickerPriceCents(data.yes_ask, data.yes_ask_dollars);
 
     // Update market data
     this.marketData.set(ticker, { bestBid, bestAsk });

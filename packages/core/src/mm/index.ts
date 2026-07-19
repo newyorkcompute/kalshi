@@ -29,6 +29,18 @@ export {
   type PlaceOrderResult,
 } from "./order-manager.js";
 
+export {
+  createOrdersV2Client,
+  KalshiOrdersV2Client,
+  mapToYesBookOrder,
+  toCreateOrderV2Request,
+  statusFromV2Counts,
+  type OrdersV2Client,
+  type CreateOrderV2Request,
+  type CreateOrderV2Response,
+  type BookSide,
+} from "./orders-v2.js";
+
 // Inventory Tracker
 export { InventoryTracker } from "./inventory.js";
 

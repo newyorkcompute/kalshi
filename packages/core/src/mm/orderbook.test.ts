@@ -42,6 +42,40 @@ describe("LocalOrderbook", () => {
       expect(orderbook.getBestAsk()).toBeNull();
     });
 
+    it("should initialize BBO from dollar fixed-point snapshot", () => {
+      const snapshot: OrderbookSnapshot = {
+        market_ticker: "TEST-MARKET",
+        market_id: "123",
+        yes_dollars_fp: [["0.6100", "22.35"]],
+        no_dollars_fp: [["0.3900", "15.00"]],
+      };
+
+      orderbook.applySnapshot(snapshot);
+
+      const bbo = orderbook.getBBO();
+      expect(bbo).not.toBeNull();
+      expect(bbo?.bidPrice).toBe(61);
+      expect(bbo?.askPrice).toBe(61); // 100 - 39 (NO bid at 39¢)
+      expect(bbo?.bidSize).toBe(22);
+      expect(bbo?.askSize).toBe(15);
+    });
+
+    it("should prefer legacy cent arrays when non-empty", () => {
+      const snapshot: OrderbookSnapshot = {
+        market_ticker: "TEST-MARKET",
+        market_id: "123",
+        yes: [[50, 10]],
+        no: [[40, 5]],
+        yes_dollars_fp: [["0.9900", "1"]],
+        no_dollars_fp: [["0.0100", "1"]],
+      };
+
+      orderbook.applySnapshot(snapshot);
+
+      expect(orderbook.getBestBid()?.price).toBe(50);
+      expect(orderbook.getBestAsk()?.price).toBe(60); // 100 - 40
+    });
+
     it("should filter zero quantity levels", () => {
       const snapshot: OrderbookSnapshot = {
         market_ticker: "TEST-MARKET",
@@ -108,6 +142,19 @@ describe("LocalOrderbook", () => {
       orderbook.applyDelta(delta);
 
       expect(orderbook.getBestBid()).toBeNull();
+    });
+
+    it("should apply delta with dollar fixed-point price", () => {
+      orderbook.applyDelta({
+        market_ticker: "TEST-MARKET",
+        price: "0.5200",
+        delta: 8,
+        side: "yes",
+      });
+
+      const bid = orderbook.getBestBid();
+      expect(bid?.price).toBe(52);
+      expect(bid?.quantity).toBe(8);
     });
 
     it("should track sequence number", () => {

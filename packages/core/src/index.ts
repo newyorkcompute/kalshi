@@ -89,6 +89,9 @@ export {
   LocalOrderbook,
   OrderbookManager,
   DEFAULT_RISK_LIMITS,
+  createOrdersV2Client,
+  mapToYesBookOrder,
+  toCreateOrderV2Request,
   type Side,
   type Action,
   type OrderStatus,
@@ -109,4 +112,7 @@ export {
   type OrderbookSnapshot,
   type OrderbookDelta,
   type BBO,
+  type OrdersV2Client,
+  type CreateOrderV2Request,
+  type BookSide,
 } from "./mm/index.js";
