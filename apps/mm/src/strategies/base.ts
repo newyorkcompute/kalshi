@@ -100,7 +100,9 @@ export abstract class BaseStrategy implements Strategy {
   protected isQuotable(snapshot: MarketSnapshot): boolean {
     // Skip if no valid prices
     if (snapshot.bestBid <= 0 || snapshot.bestAsk <= 0) return false;
-    if (snapshot.bestBid >= snapshot.bestAsk) return false;
+    // Allow bid === ask: deci_cent books often collapse to the same whole cent
+    // after dollar→cent rounding (e.g. 60.6¢/60.7¢ → 61/61). Still quotable.
+    if (snapshot.bestBid > snapshot.bestAsk) return false;
 
     // Skip if spread is too wide (illiquid)
     if (snapshot.spread > 20) return false;

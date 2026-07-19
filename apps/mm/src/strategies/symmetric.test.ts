@@ -109,15 +109,32 @@ describe("SymmetricStrategy", () => {
       expect(quotes).toHaveLength(0);
     });
 
-    it("should skip if bid >= ask", () => {
-      const strategy = new SymmetricStrategy();
+    it("should quote when bid equals ask (tight deci_cent books)", () => {
+      const strategy = new SymmetricStrategy({ spreadCents: 4, sizePerSide: 10 });
 
       const snapshot: MarketSnapshot = {
         ticker: "TEST-MARKET",
         bestBid: 50,
-        bestAsk: 50, // No spread
+        bestAsk: 50, // Collapsed 0.1¢ spread after cent rounding
         mid: 50,
         spread: 0,
+        position: null,
+      };
+
+      const quotes = strategy.computeQuotes(snapshot);
+      expect(quotes).toHaveLength(1);
+      expect(quotes[0]!.bidPrice).toBeLessThan(quotes[0]!.askPrice);
+    });
+
+    it("should skip if bid > ask (inverted book)", () => {
+      const strategy = new SymmetricStrategy();
+
+      const snapshot: MarketSnapshot = {
+        ticker: "TEST-MARKET",
+        bestBid: 55,
+        bestAsk: 50,
+        mid: 52.5,
+        spread: -5,
         position: null,
       };
 

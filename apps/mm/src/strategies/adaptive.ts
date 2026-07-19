@@ -247,14 +247,13 @@ export class AdaptiveStrategy extends BaseStrategy {
     // Ensure minimum spread for profitability
     const ourSpread = askPrice - bidPrice;
     if (ourSpread < effectiveMinSpread) {
-      // Market is too tight - quote AT the market instead of inside
-      bidPrice = bestBid - inventorySkew;
-      askPrice = bestAsk - inventorySkew;
-
-      // Still not enough spread? Skip this market
-      if (bestAsk - bestBid < effectiveMinSpread) {
-        return [];
-      }
+      // Market too tight to improve — stand outside the touch so we still
+      // rest with at least minSpread (important for deci_cent books that
+      // collapse to 0–1¢ after dollar→cent rounding).
+      const deficit = effectiveMinSpread - Math.max(0, bestAsk - bestBid);
+      const pad = Math.max(0, Math.ceil(deficit / 2));
+      bidPrice = bestBid - pad - inventorySkew;
+      askPrice = bestAsk + pad - inventorySkew;
     }
 
     // Clamp to valid price range
