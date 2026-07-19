@@ -14,6 +14,12 @@ import type {
   Quote,
 } from "./types.js";
 import { isRateLimitError } from "../rate-limiter.js";
+import {
+  parseFixedCount,
+  statusFromV2Counts,
+  toCreateOrderV2Request,
+  type OrdersV2Client,
+} from "./orders-v2.js";
 
 /** Kalshi order status values */
 type KalshiOrderStatus = "resting" | "canceled" | "executed" | "pending";
@@ -79,23 +85,25 @@ function generateClientOrderId(): string {
 }
 
 /**
- * OrderManager handles order lifecycle for market making
+ * OrderManager handles order lifecycle for market making.
+ * Writes go through Create Order V2; reads/reconcile still use OrdersApi when provided.
  */
 export class OrderManager {
   private orders: Map<string, ManagedOrder> = new Map();
-  private ordersApi: OrdersApi;
+  private ordersV2: OrdersV2Client;
+  private ordersApi: OrdersApi | null;
 
-  constructor(ordersApi: OrdersApi) {
-    this.ordersApi = ordersApi;
+  constructor(ordersV2: OrdersV2Client, ordersApi?: OrdersApi) {
+    this.ordersV2 = ordersV2;
+    this.ordersApi = ordersApi ?? null;
   }
 
   /**
-   * Place a new order
+   * Place a new order via Create Order V2
    */
   async place(input: CreateOrderInput): Promise<PlaceOrderResult> {
     const clientOrderId = generateClientOrderId();
 
-    // Create managed order (pending)
     const managedOrder: ManagedOrder = {
       clientOrderId,
       ticker: input.ticker,
@@ -111,23 +119,24 @@ export class OrderManager {
     this.orders.set(clientOrderId, managedOrder);
 
     try {
-      // Place via Kalshi API (post_only ensures we rest as maker, never cross)
-      const response = await this.ordersApi.createOrder({
-        ticker: input.ticker,
-        type: "limit",
-        side: input.side,
-        action: input.action,
-        yes_price: input.side === "yes" ? input.price : undefined,
-        no_price: input.side === "no" ? input.price : undefined,
-        count: input.count,
-        client_order_id: clientOrderId,
-        post_only: true,
-      });
+      const response = await this.ordersV2.createOrder(
+        toCreateOrderV2Request({
+          ticker: input.ticker,
+          side: input.side,
+          action: input.action,
+          priceCents: input.price,
+          count: input.count,
+          clientOrderId,
+          postOnly: true,
+        })
+      );
 
-      // Update with Kalshi order ID
-      const kalshiOrder = response.data.order;
-      managedOrder.id = kalshiOrder?.order_id;
-      managedOrder.status = this.mapKalshiStatus(kalshiOrder?.status);
+      managedOrder.id = response.order_id;
+      managedOrder.filledCount = Math.floor(parseFixedCount(response.fill_count));
+      managedOrder.status = statusFromV2Counts(
+        response.fill_count,
+        response.remaining_count
+      );
 
       return { success: true, order: managedOrder };
     } catch (error) {
@@ -143,18 +152,15 @@ export class OrderManager {
    * @deprecated Use batchCreate() for better performance
    */
   async placeBulk(inputs: CreateOrderInput[]): Promise<PlaceOrderResult[]> {
-    // Place in parallel for speed
     return Promise.all(inputs.map((input) => this.place(input)));
   }
 
   /**
-   * Batch create multiple orders in a single API call
-   * Much faster than creating one by one (1 API call instead of N)
+   * Batch create multiple orders via Batch Create Orders V2
    */
   async batchCreate(inputs: CreateOrderInput[]): Promise<PlaceOrderResult[]> {
     if (inputs.length === 0) return [];
 
-    // Generate client order IDs and create managed orders
     const ordersWithIds = inputs.map((input) => {
       const clientOrderId = generateClientOrderId();
       const managedOrder: ManagedOrder = {
@@ -173,36 +179,41 @@ export class OrderManager {
     });
 
     try {
-      const response = await this.ordersApi.batchCreateOrders({
-        orders: ordersWithIds.map(({ input, clientOrderId }) => ({
-          ticker: input.ticker,
-          type: "limit" as const,
-          side: input.side,
-          action: input.action,
-          yes_price: input.side === "yes" ? input.price : undefined,
-          no_price: input.side === "no" ? input.price : undefined,
-          count: input.count,
-          client_order_id: clientOrderId,
-          post_only: true,
-        })),
-      });
+      const response = await this.ordersV2.batchCreateOrders(
+        ordersWithIds.map(({ input, clientOrderId }) =>
+          toCreateOrderV2Request({
+            ticker: input.ticker,
+            side: input.side,
+            action: input.action,
+            priceCents: input.price,
+            count: input.count,
+            clientOrderId,
+            postOnly: true,
+          })
+        )
+      );
 
-      // Map responses back to our results
       const results: PlaceOrderResult[] = [];
-      const responseOrders = response.data.orders ?? [];
+      const responseOrders = response.orders ?? [];
 
       for (let i = 0; i < ordersWithIds.length; i++) {
         const { managedOrder } = ordersWithIds[i]!;
         const responseItem = responseOrders[i];
-        const order = responseItem?.order;
 
-        if (order?.order_id) {
-          managedOrder.id = order.order_id;
-          managedOrder.status = this.mapKalshiStatus(order.status);
+        if (responseItem?.order_id) {
+          managedOrder.id = responseItem.order_id;
+          managedOrder.filledCount = Math.floor(
+            parseFixedCount(responseItem.fill_count)
+          );
+          managedOrder.status = statusFromV2Counts(
+            responseItem.fill_count,
+            responseItem.remaining_count
+          );
           results.push({ success: true, order: managedOrder });
         } else {
           managedOrder.status = "failed";
-          const errorMsg = responseItem?.error?.message ?? "No order in response";
+          const errorMsg =
+            responseItem?.error?.message ?? "No order in response";
           results.push({
             success: false,
             order: managedOrder,
@@ -213,7 +224,6 @@ export class OrderManager {
 
       return results;
     } catch (error) {
-      // Mark all orders as failed
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
@@ -225,7 +235,7 @@ export class OrderManager {
   }
 
   /**
-   * Cancel a specific order by client order ID
+   * Cancel a specific order by client order ID (Cancel Order V2)
    */
   async cancel(clientOrderId: string): Promise<boolean> {
     const order = this.orders.get(clientOrderId);
@@ -234,11 +244,10 @@ export class OrderManager {
     }
 
     try {
-      await this.ordersApi.cancelOrder(order.id);
+      await this.ordersV2.cancelOrder(order.id);
       order.status = "cancelled";
       return true;
     } catch {
-      // Order may already be filled or cancelled
       return false;
     }
   }
@@ -250,33 +259,31 @@ export class OrderManager {
     const ordersToCancel = this.getActive(ticker);
     if (ordersToCancel.length === 0) return 0;
 
-    // Get order IDs (only orders that have been confirmed by Kalshi)
     const orderIds = ordersToCancel
       .filter((o) => o.id)
       .map((o) => o.id as string);
 
     if (orderIds.length === 0) return 0;
 
-    // Use batch cancel for efficiency (1 API call instead of N)
     return this.batchCancel(orderIds);
   }
 
   /**
-   * Batch cancel multiple orders in a single API call
-   * Much faster than canceling one by one
+   * Batch cancel via Batch Cancel Orders V2
    */
   async batchCancel(orderIds: string[]): Promise<number> {
     if (orderIds.length === 0) return 0;
 
     try {
-      const response = await this.ordersApi.batchCancelOrders({
-        ids: orderIds,
-      });
+      const response = await this.ordersV2.batchCancelOrders(orderIds);
+      const cancelledOrders = response.orders ?? [];
+      let cancelledCount = 0;
 
-      // Update local order status
-      const cancelledOrders = response.data.orders ?? [];
       for (const cancelled of cancelledOrders) {
-        // Find by Kalshi order ID and update status
+        if (cancelled.error || parseFixedCount(cancelled.reduced_by) <= 0) {
+          continue;
+        }
+        cancelledCount++;
         for (const order of this.orders.values()) {
           if (order.id === cancelled.order_id) {
             order.status = "cancelled";
@@ -285,36 +292,40 @@ export class OrderManager {
         }
       }
 
-      return cancelledOrders.length;
+      return cancelledCount;
     } catch (err) {
-      // Fallback to individual cancels if batch fails
       const errMsg = err instanceof Error ? err.message : String(err);
-      console.warn(`[OrderManager] Batch cancel failed (${errMsg}), falling back to individual cancels`);
+      console.warn(
+        `[OrderManager] Batch cancel failed (${errMsg}), falling back to individual cancels`
+      );
 
       let cancelledCount = 0;
       for (const orderId of orderIds) {
         try {
-          await this.ordersApi.cancelOrder(orderId);
+          await this.ordersV2.cancelOrder(orderId);
           cancelledCount++;
-
-          // Small delay between individual cancels to avoid rate limiting
+          for (const order of this.orders.values()) {
+            if (order.id === orderId) {
+              order.status = "cancelled";
+              break;
+            }
+          }
           if (orderIds.length > 1) {
             await sleep(200);
           }
         } catch (cancelErr) {
-          // If rate limited, wait longer before continuing
           if (isRateLimitError(cancelErr)) {
-            console.log("[OrderManager] Rate limited on individual cancel, waiting 2s...");
+            console.log(
+              "[OrderManager] Rate limited on individual cancel, waiting 2s..."
+            );
             await sleep(2000);
-            // Retry this one
             try {
-              await this.ordersApi.cancelOrder(orderId);
+              await this.ordersV2.cancelOrder(orderId);
               cancelledCount++;
             } catch {
               // Give up on this order
             }
           }
-          // Order may already be filled or cancelled - continue
         }
       }
       return cancelledCount;
@@ -666,17 +677,24 @@ export class OrderManager {
     cancelled: number;
     updated: number;
   }> {
+    if (!this.ordersApi) {
+      console.warn("[OrderManager] syncWithKalshi skipped: no OrdersApi");
+      return { synced: 0, cancelled: 0, updated: 0 };
+    }
+    const ordersApi = this.ordersApi;
+
     try {
       // Fetch open orders from Kalshi with retry on rate limit
       const response = await retryWithBackoff(
-        () => this.ordersApi.getOrders(
-          undefined, // ticker - fetch all, filter locally
-          undefined, // event_ticker
-          undefined, // min_ts
-          undefined, // max_ts
-          "resting", // status - only resting orders
-          100        // limit
-        ),
+        () =>
+          ordersApi.getOrders(
+            undefined, // ticker - fetch all, filter locally
+            undefined, // event_ticker
+            undefined, // min_ts
+            undefined, // max_ts
+            "resting", // status - only resting orders
+            100 // limit
+          ),
         { maxRetries: 3, initialDelayMs: 2000 }
       );
 
@@ -721,17 +739,24 @@ export class OrderManager {
    * Includes retry logic for rate limit (429) errors
    */
   async cancelAllAndClear(tickers?: string[]): Promise<number> {
+    if (!this.ordersApi) {
+      console.warn("[OrderManager] cancelAllAndClear skipped: no OrdersApi");
+      return 0;
+    }
+    const ordersApi = this.ordersApi;
+
     try {
       // Fetch all resting orders from Kalshi with retry on rate limit
       const response = await retryWithBackoff(
-        () => this.ordersApi.getOrders(
-          undefined, // ticker
-          undefined, // event_ticker
-          undefined, // min_ts
-          undefined, // max_ts
-          "resting", // status
-          100        // limit
-        ),
+        () =>
+          ordersApi.getOrders(
+            undefined, // ticker
+            undefined, // event_ticker
+            undefined, // min_ts
+            undefined, // max_ts
+            "resting", // status
+            100 // limit
+          ),
         { maxRetries: 3, initialDelayMs: 2000 }
       );
 

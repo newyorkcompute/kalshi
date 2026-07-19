@@ -11,25 +11,102 @@ export interface PriceLevel {
   quantity: number;
 }
 
+/** Cent-denominated level from legacy WebSocket snapshots */
+export type CentPriceLevel = [number, number];
+
+/** Dollar fixed-point level (REST / deci_cent WebSocket) */
+export type DollarPriceLevel = [string, string];
+
 /** Orderbook snapshot from WebSocket */
 export interface OrderbookSnapshot {
   market_ticker: string;
   market_id: string;
-  /** YES side bids: [price, quantity][] */
-  yes: [number, number][];
-  /** NO side bids: [price, quantity][] */
-  no: [number, number][];
+  /** YES side bids: [price in cents, quantity][] */
+  yes?: CentPriceLevel[];
+  /** NO side bids: [price in cents, quantity][] */
+  no?: CentPriceLevel[];
+  /** YES bids as dollar fixed-point (deci_cent WebSocket) */
+  yes_dollars_fp?: DollarPriceLevel[];
+  no_dollars_fp?: DollarPriceLevel[];
+  /** YES/NO bids as dollar strings (REST-style) */
+  yes_dollars?: DollarPriceLevel[];
+  no_dollars?: DollarPriceLevel[];
 }
 
 /** Orderbook delta from WebSocket */
 export interface OrderbookDelta {
   market_ticker: string;
-  /** Price that changed */
-  price: number;
+  /** Price that changed (cents or dollars depending on market) */
+  price: number | string;
   /** New quantity (0 = level removed) */
   delta: number;
   /** Which side: 'yes' or 'no' */
   side: "yes" | "no";
+  price_dollars?: string;
+  price_dollars_fp?: string;
+}
+
+function isNonEmpty<T>(levels: T[] | undefined): levels is T[] {
+  return Array.isArray(levels) && levels.length > 0;
+}
+
+/** Convert dollar fixed-point price to integer cents (0.1¢ granularity lost). */
+export function priceDollarsToCents(price: string | number): number {
+  const parsed = typeof price === "string" ? parseFloat(price) : price;
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.round(parsed * 100);
+}
+
+/** Normalize a snapshot/delta price to integer cents. */
+export function normalizeOrderbookPrice(price: number | string): number {
+  if (typeof price === "string") {
+    return priceDollarsToCents(price);
+  }
+  if (price > 0 && price < 1) {
+    return Math.round(price * 100);
+  }
+  return price;
+}
+
+function dollarLevelsToCentLevels(
+  levels: DollarPriceLevel[]
+): CentPriceLevel[] {
+  const result: CentPriceLevel[] = [];
+  for (const [priceStr, qtyStr] of levels) {
+    const price = priceDollarsToCents(priceStr);
+    const qty = Math.max(0, Math.floor(parseFloat(qtyStr)));
+    if (price > 0 && qty > 0) {
+      result.push([price, qty]);
+    }
+  }
+  return result;
+}
+
+function resolveSnapshotLevels(
+  legacy: CentPriceLevel[] | undefined,
+  dollarsFp: DollarPriceLevel[] | undefined,
+  dollars: DollarPriceLevel[] | undefined
+): CentPriceLevel[] {
+  if (isNonEmpty(legacy)) {
+    return legacy;
+  }
+  if (isNonEmpty(dollarsFp)) {
+    return dollarLevelsToCentLevels(dollarsFp);
+  }
+  if (isNonEmpty(dollars)) {
+    return dollarLevelsToCentLevels(dollars);
+  }
+  return [];
+}
+
+function resolveDeltaPriceCents(delta: OrderbookDelta): number {
+  if (delta.price_dollars_fp != null) {
+    return priceDollarsToCents(delta.price_dollars_fp);
+  }
+  if (delta.price_dollars != null) {
+    return priceDollarsToCents(delta.price_dollars);
+  }
+  return normalizeOrderbookPrice(delta.price);
 }
 
 /** Best bid/ask with size */
@@ -74,21 +151,26 @@ export class LocalOrderbook {
     this.yesBids.clear();
     this.noBids.clear();
 
-    // Load YES bids (defensive check for empty/invalid snapshots from finalized markets)
-    if (Array.isArray(snapshot.yes)) {
-      for (const [price, qty] of snapshot.yes) {
-        if (qty > 0) {
-          this.yesBids.set(price, qty);
-        }
+    const yesLevels = resolveSnapshotLevels(
+      snapshot.yes,
+      snapshot.yes_dollars_fp,
+      snapshot.yes_dollars
+    );
+    const noLevels = resolveSnapshotLevels(
+      snapshot.no,
+      snapshot.no_dollars_fp,
+      snapshot.no_dollars
+    );
+
+    for (const [price, qty] of yesLevels) {
+      if (qty > 0) {
+        this.yesBids.set(price, qty);
       }
     }
 
-    // Load NO bids
-    if (Array.isArray(snapshot.no)) {
-      for (const [price, qty] of snapshot.no) {
-        if (qty > 0) {
-          this.noBids.set(price, qty);
-        }
+    for (const [price, qty] of noLevels) {
+      if (qty > 0) {
+        this.noBids.set(price, qty);
       }
     }
 
@@ -101,13 +183,14 @@ export class LocalOrderbook {
    */
   applyDelta(delta: OrderbookDelta): void {
     const map = delta.side === "yes" ? this.yesBids : this.noBids;
+    const priceCents = resolveDeltaPriceCents(delta);
 
     if (delta.delta <= 0) {
       // Remove level
-      map.delete(delta.price);
+      map.delete(priceCents);
     } else {
       // Update level
-      map.set(delta.price, delta.delta);
+      map.set(priceCents, delta.delta);
     }
 
     this.lastUpdate = Date.now();
